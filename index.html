@@ -8,23 +8,26 @@
 
 <body>
   <main>
-    <fieldset>
+    <fieldset class="profile-fieldset" disabled>
       <legend>Profile</legend>
-      <table>
-        <tr>
-          <td>ID</td>
-          <td><input type="text" disabled></td>
-        </tr>
-        <tr>
-          <td>Name</td>
-          <td><input type="text"></td>
-        </tr>
-      </table>
+      <form class="profile-form">
+        <table>
+          <tr>
+            <td>ID</td>
+            <td><input type="text" name="id" disabled></td>
+          </tr>
+          <tr>
+            <td>Name</td>
+            <td><input type="text" name="name" value="Foobar"></td>
+          </tr>
+        </table>
+      </form>
       <hr>
-      <button type="button">Save</button>
+      <button type="button" class="profile-create-btn">Create</button>
+      <button type="button" class="profile-save-btn">Save</button>
     </fieldset>
     <br>
-    <fieldset>
+    <fieldset disabled>
       <legend>Friends</legend>
       <ul class="dat-friends">
         <li>No friends yet :(</li>
@@ -34,14 +37,14 @@
       <button type="button" class="dat-add-friend-btn">Add friend</button>
     </fieldset>
     <br>
-    <fieldset>
+    <fieldset disabled>
       <legend>Chat</legend>
       <div>Not connected</div>
       <ul style="max-height: 500px; overflow-y: auto;"></ul>
       <hr>
-      <input type="text" disabled>
-      <button type="button" disabled>Send</button>
-      <button type="button" disabled>Disconnect</button>
+      <input type="text">
+      <button type="button">Send</button>
+      <button type="button">Disconnect</button>
     </fieldset>
   </main>
 
