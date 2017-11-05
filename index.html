@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>Dat Protocol - Social App</title>
+</head>
+
+<body>
+  <main>
+    <fieldset>
+      <legend>Profile</legend>
+      <table>
+        <tr>
+          <td>ID</td>
+          <td><input type="text" disabled></td>
+        </tr>
+        <tr>
+          <td>Name</td>
+          <td><input type="text"></td>
+        </tr>
+      </table>
+      <hr>
+      <button type="button">Save</button>
+    </fieldset>
+    <br>
+    <fieldset>
+      <legend>Friends</legend>
+      <ul class="dat-friends">
+        <li>No friends yet :(</li>
+      </ul>
+      <hr>
+      <input class="dat-add-friend-input" type="text" />
+      <button type="button" class="dat-add-friend-btn">Add friend</button>
+    </fieldset>
+    <br>
+    <fieldset>
+      <legend>Chat</legend>
+      <div>Not connected</div>
+      <ul style="max-height: 500px; overflow-y: auto;"></ul>
+      <hr>
+      <input type="text" disabled>
+      <button type="button" disabled>Send</button>
+      <button type="button" disabled>Disconnect</button>
+    </fieldset>
+  </main>
+
+  <script>
+    // You can also require other files to run in this process
+    require('./renderer.js')
+  </script>
+</body>
+
+</html>
