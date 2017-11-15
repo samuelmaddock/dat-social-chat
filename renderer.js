@@ -85,7 +85,7 @@ class App {
             // swarm.listen(0)
         })
         
-        swarm.once('connection', function(socket) {
+        swarm.on('connection', function(socket) {
             console.log('Local swarm connection', socket)
 
             socket.on('data', data => {
