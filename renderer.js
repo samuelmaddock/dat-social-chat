@@ -1,6 +1,11 @@
 const fs = require('fs')
 const path = require('path')
+
 const Dat = require('dat-node')
+const swarmDefaults = require('dat-swarm-defaults')
+const disc = require('discovery-swarm')
+
+const SWARM_TEST_ID = 'TESTLOBBY_'
 
 class App {
     async init() {
@@ -24,6 +29,7 @@ class App {
         this.$.friendsAddBtn.addEventListener('click', this.onAddFriend.bind(this), false)
 
         await this.initDat()
+        this.initLocalSwarm()
         console.info('Initialized app')
     }
 
@@ -38,7 +44,49 @@ class App {
         this.profile = await this.archive.getProfile()
         this.friends = await this.archive.getFriends()
 
+        this.archive.dat.network.on('connection', function() {
+            console.info('archive connection', arguments);
+        });
+        
+        this.archive.dat.network.on('peer', peer => {
+            console.info('archive peer', peer);
+        });
+
         this.updateUI()
+    }
+
+    initLocalSwarm() {
+        if (this.localSwarm) {
+            this.localSwarm.close()
+            this.localSwarm = null
+        }
+        
+        const id = SWARM_TEST_ID + this.archive.id
+        const DEFAULT_PORT = 3282 + 1
+        console.info(`Starting local swarm '${id}'`);
+        
+        const swarmOpts = {
+            hash: false
+        }
+        const swarm = disc(swarmDefaults(swarmOpts))
+        swarm.listen(DEFAULT_PORT)
+        swarm.join(id, {announce: true})
+
+        swarm.once('error', function(){
+            console.log('Local swarm error', arguments)
+            swarm.listen(0)
+        })
+        
+        swarm.once('connection', function(socket) {
+            console.log('Local swarm connection', socket)
+
+            socket.on('data', data => {
+                console.log('local data', data)
+                socket.write('world')
+            })
+        })
+
+        this.localSwarm = swarm
     }
     
     updateUI() {
@@ -60,6 +108,7 @@ class App {
             this.friends.forEach(friendId => {
                 const el = document.createElement('li')
                 el.innerText = friendId
+                el.onclick = this.onConnectToFriend.bind(this, friendId)
                 this.$.friendsList.appendChild(el)
             });
         } else {
@@ -98,8 +147,44 @@ class App {
         // cleanup
         this.$.friendsForm.friendid.value = ''
         this.$.friendsFieldset.disabled = false;
-        
+
         this.updateUI()
+    }
+
+    onConnectToFriend(friendId) {
+        const id = SWARM_TEST_ID + friendId
+        this.connectRemoteSwarm(id)
+    }
+
+    connectRemoteSwarm(id) {
+        if (this.remoteSwarm) {
+            this.remoteSwarm.close()
+            this.remoteSwarm = null
+        }
+        
+        console.info(`Connecting to remote swarm ${id}...`)
+        
+        // console.info('Connect', friendId, id)
+        const swarmOpts = {
+            hash: false
+        }
+        const swarm = disc(swarmDefaults(swarmOpts))
+        swarm.join(id, {announce: false})
+
+        swarm.once('error', function(){
+            console.log('Remote swarm error', arguments)
+            swarm.listen(0)
+        })
+        
+        swarm.once('connection', function(socket) {
+            console.log('Remote swarm connection', socket)
+            socket.on('data', data => {
+                console.log('remote data', data)
+            })
+            socket.write('hello')
+        })
+
+        this.remoteSwarm = swarm
     }
 }
 
