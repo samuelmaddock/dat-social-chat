@@ -4,6 +4,12 @@
 <head>
   <meta charset="UTF-8">
   <title>Dat Protocol - Social App</title>
+  <style>
+    fieldset {
+      min-width: 0px;
+      max-width: 100%;
+    }
+  </style>
 </head>
 
 <body>
@@ -18,7 +24,7 @@
           </tr>
           <tr>
             <td>Name</td>
-            <td><input type="text" name="name" value="Foobar"></td>
+            <td><input type="text" name="name"></td>
           </tr>
         </table>
       </form>
@@ -33,8 +39,10 @@
         No friends yet :(
       </ul>
       <hr>
-      <input class="friends-add-btn" type="text" />
-      <button type="button" class="dat-add-friend-btn">Add friend</button>
+      <form class="friends-form">
+        <input type="text" name="friendid" minlength="64" maxlength="64" required />
+        <button type="button" class="friends-add-btn">Add friend</button>
+      </form>
     </fieldset>
     <br>
     <fieldset disabled>
