@@ -4,8 +4,15 @@ const path = require('path')
 const Dat = require('dat-node')
 const swarmDefaults = require('dat-swarm-defaults')
 const disc = require('discovery-swarm')
+const sodium = require('sodium-universal')
 
-const SWARM_TEST_ID = 'TESTLOBBY_'
+const FRIENDSWARM = new Buffer('friendswarm')
+
+function friendDiscoveryKey(tree) {
+    var digest = new Buffer(32)
+    sodium.crypto_generichash(digest, FRIENDSWARM, tree)
+    return digest
+}
 
 class App {
     async init() {
@@ -61,9 +68,9 @@ class App {
             this.localSwarm = null
         }
         
-        const id = SWARM_TEST_ID + this.archive.id
+        const id = friendDiscoveryKey(this.archive.id)
         const DEFAULT_PORT = 3282 + 1
-        console.info(`Starting local swarm '${id}'`);
+        console.info(`Starting local swarm ${id.toString('hex')}`);
         
         const swarmOpts = {
             hash: false
@@ -152,7 +159,8 @@ class App {
     }
 
     onConnectToFriend(friendId) {
-        const id = SWARM_TEST_ID + friendId
+        const key = Buffer.from(friendId, 'hex')
+        const id = friendDiscoveryKey(key)
         this.connectRemoteSwarm(id)
     }
 
@@ -162,7 +170,7 @@ class App {
             this.remoteSwarm = null
         }
         
-        console.info(`Connecting to remote swarm ${id}...`)
+        console.info(`Connecting to remote swarm ${id.toString('hex')}...`)
         
         // console.info('Connect', friendId, id)
         const swarmOpts = {
