@@ -11,6 +11,7 @@ const FRIENDSWARM = new Buffer('friendswarm')
 function friendDiscoveryKey(tree) {
     var digest = new Buffer(32)
     sodium.crypto_generichash(digest, FRIENDSWARM, tree)
+    console.debug(`FRIENDDISC digest=${digest.toString('hex')}, tree=${tree.toString('hex')}`)
     return digest
 }
 
@@ -36,7 +37,7 @@ class App {
         this.$.friendsAddBtn.addEventListener('click', this.onAddFriend.bind(this), false)
 
         await this.initDat()
-        this.initLocalSwarm()
+        this.updateUI()
         console.info('Initialized app')
     }
 
@@ -59,7 +60,7 @@ class App {
             console.info('archive peer', peer);
         });
 
-        this.updateUI()
+        this.initLocalSwarm()
     }
 
     initLocalSwarm() {
@@ -68,7 +69,7 @@ class App {
             this.localSwarm = null
         }
         
-        const id = friendDiscoveryKey(this.archive.id)
+        const id = friendDiscoveryKey(this.archive.dat.key)
         const DEFAULT_PORT = 3282 + 1
         console.info(`Starting local swarm ${id.toString('hex')}`);
         
