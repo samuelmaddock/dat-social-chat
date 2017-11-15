@@ -7,6 +7,7 @@ const disc = require('discovery-swarm')
 const sodium = require('sodium-universal')
 
 const FRIENDSWARM = new Buffer('friendswarm')
+// const DEFAULT_PORT = 3282 + 1
 
 function friendDiscoveryKey(tree) {
     var digest = new Buffer(32)
@@ -70,19 +71,18 @@ class App {
         }
         
         const id = friendDiscoveryKey(this.archive.dat.key)
-        const DEFAULT_PORT = 3282 + 1
         console.info(`Starting local swarm ${id.toString('hex')}`);
         
         const swarmOpts = {
             hash: false
         }
         const swarm = disc(swarmDefaults(swarmOpts))
-        swarm.listen(DEFAULT_PORT)
+        // swarm.listen(DEFAULT_PORT)
         swarm.join(id, {announce: true})
 
         swarm.once('error', function(){
             console.log('Local swarm error', arguments)
-            swarm.listen(0)
+            // swarm.listen(0)
         })
         
         swarm.once('connection', function(socket) {
@@ -178,11 +178,12 @@ class App {
             hash: false
         }
         const swarm = disc(swarmDefaults(swarmOpts))
-        swarm.join(id, {announce: false})
+        // swarm.listen(DEFAULT_PORT + 1)
+        swarm.join(id, {announce: true})
 
         swarm.once('error', function(){
             console.log('Remote swarm error', arguments)
-            swarm.listen(0)
+            // swarm.listen(0)
         })
         
         swarm.once('connection', function(socket) {
