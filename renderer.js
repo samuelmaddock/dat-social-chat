@@ -2,29 +2,88 @@ const fs = require('fs')
 const path = require('path')
 const Dat = require('dat-node')
 
-class DatSocialArchive {
-    static get dir() {
-        return path.join(process.cwd(), '/dat')
-    }
+class App {
+    async init() {
+        const $ = document.querySelector.bind(document)
 
-    static get profilePath() {
-        return path.join(this.dir, 'profile.json')
-    }
+        this.$ = {
+            profileFieldset: $('.profile-fieldset'),
+            profileForm: $('.profile-form'),
+            profileCreateBtn: $('.profile-create-btn'),
+            profileSaveBtn: $('.profile-save-btn'),
 
-    static checkDir() {
-        if (!fs.existsSync(this.dir)){
-            fs.mkdirSync(this.dir)
+            friendsFieldset: $('.friends-fieldset'),
+            friendsList: $('.friends-list'),
+            friendsAddBtn: $('.friends-add-btn'),
         }
+        
+        this.$.profileCreateBtn.addEventListener('click', this.onSaveProfile.bind(this), false);
+        this.$.profileSaveBtn.addEventListener('click', this.onSaveProfile.bind(this), false);
+
+        await this.initDat()
+        console.info('Initialized app')
     }
 
-    static get() {
+    async initDat() {
+        try {
+            this.archive = await DatSocialArchive.get('./dat')
+        } catch (e) {
+            console.log(e)
+        }
+
+        this.updateUI()
+    }
+    
+    updateUI() {
+        const { archive } = this;
+        
+        // Profile
+        this.$.profileForm.id.value = archive ? archive.id : '';
+        // this.$.profileForm.name.value = archive ? archive.id : '';
+        this.$.profileCreateBtn.disabled = !!archive
+        this.$.profileSaveBtn.disabled = !archive
+
+        this.$.profileFieldset.disabled = false
+        
+        // Friends
+        this.$.friendsFieldset.disabled = false
+    }
+
+    async onSaveProfile() {
+        const form = this.$.profileForm
+        const profile = {
+            name: form.name.value
+        }
+
+        this.archive.updateProfile(profile)
+    }
+}
+
+class DatSocialArchive {
+    constructor(dat) {
+        this.dat = dat;
+    }
+
+    get id() {
+        return this.dat.key.toString('hex');
+    }
+
+    get profilePath() {
+        return path.join(this.dat.path, 'profile.json')
+    }
+    
+    updateProfile(profile) {
+        const profileJson = JSON.stringify(profile, null, '  ')
+        fs.writeFileSync(this.profilePath, profileJson)
+    }
+    
+    static get(dirpath) {
         return new Promise((resolve, reject) => {
-            if (!fs.existsSync(this.dir)) {
-                reject('No dat dir')
-                return
+            if (!fs.existsSync(dirpath)) {
+                fs.mkdir(dirpath)
             }
             
-            Dat(this.dir, (err, dat) => {
+            Dat(dirpath, (err, dat) => {
                 if (err) {
                     reject(err)
                     return
@@ -38,70 +97,18 @@ class DatSocialArchive {
                 dat.joinNetwork()
 
                 console.info(`My dat link is: dat://${dat.key.toString('hex')}`)
-                resolve(dat)
+
+                const archive = new DatSocialArchive(dat);
+                resolve(archive)
             })
         })
     }
-    
-    static updateProfile(profile) {
-        this.checkDir()
-
-        const profileJson = JSON.stringify(profile, null, '  ')
-        fs.writeFileSync(this.profilePath, profileJson)
-    }
 }
 
-class App {
-    async init() {
-        const $ = document.querySelector.bind(document)
+function init() {
+    const app = new App()
+    window.app = app
 
-        this.$ = {
-            profileFieldset: $('.profile-fieldset'),
-            profileForm: $('.profile-form'),
-            profileCreateBtn: $('.profile-create-btn'),
-            profileSaveBtn: $('.profile-save-btn'),
-        }
-        
-        this.$.profileCreateBtn.addEventListener('click', this.updateProfile.bind(this), false);
-        this.$.profileSaveBtn.addEventListener('click', this.updateProfile.bind(this), false);
-
-        await this.initDat()
-        console.info('Initialized app')
-    }
-
-    async initDat() {
-        try {
-            const dat = await DatSocialArchive.get()
-            this.dat = dat
-        } catch (e) {
-            console.log(e)
-        }
-
-        this.updateProfileFields()
-    }
-    
-    updateProfileFields() {
-        this.$.profileCreateBtn.disabled = !!this.dat
-        this.$.profileSaveBtn.disabled = !this.dat
-
-        this.$.profileFieldset.disabled = false
-    }
-
-    updateProfile() {
-        const form = this.$.profileForm
-        const profile = {
-            name: form.name.value
-        }
-        console.log('create', profile)
-
-        DatSocialArchive.updateProfile(profile)
-
-        if (!this.dat) {
-            this.initDat()
-        }
-    }
+    app.init()
 }
-
-const app = new App()
-app.init()
-window.app = app
+init()
