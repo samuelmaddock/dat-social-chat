@@ -83,7 +83,7 @@ class App {
         }
         const swarm = disc(swarmDefaults(swarmOpts))
         swarm.listen(DEFAULT_PORT)
-        swarm.join(this.archive.dat.archive.discoveryKey)
+        swarm.join(id)
 
         swarm.once('error', function(){
             console.log('Local swarm error', arguments)
@@ -195,7 +195,7 @@ class App {
         }
         const swarm = disc(swarmDefaults(swarmOpts))
         swarm.listen(DEFAULT_PORT+1)
-        swarm.join(this.archive.dat.archive.discoveryKey)
+        swarm.join(id)
 
         swarm.once('error', function(){
             console.log('Remote swarm error', arguments)
