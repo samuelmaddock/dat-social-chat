@@ -98,6 +98,8 @@ class App {
                 })
                 .then(peer => {
                     console.log('PEER PEER', peer)
+                    socket.destroy()
+                    swarm.close()
                 })
         })
 
@@ -205,7 +207,9 @@ class App {
                     return network.signalHost(socket)
                 })
                 .then(peer => {
-                    console.log('HOST PEER', peer)
+                    console.info('HOST PEER', peer)
+                    socket.destroy()
+                    swarm.close()
                 })
         })
 

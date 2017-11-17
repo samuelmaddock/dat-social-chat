@@ -140,44 +140,72 @@ async function authPeer(socket, publicKey, secretKey) {
     })
 }
 
+const CHUNK_DELIMITER = ';'
+
+function writeJSONChunk(stream, object) {
+    const buf = new Buffer(JSON.stringify(object) + CHUNK_DELIMITER)
+    stream.write(buf)
+}
+
+function readJSONChunk(data, cb) {
+    let chunk = data.toString();
+    let d_index = chunk.indexOf(CHUNK_DELIMITER);
+   
+    while (d_index > -1) {         
+        try {
+            string = chunk.substring(0,d_index);
+            json = JSON.parse(string);
+            cb(json);
+        } catch (e) {
+            throw e;
+        }
+        chunk = chunk.substring(d_index+1);
+        d_index = chunk.indexOf(';');
+    }  
+}
+
 async function signalHost(socket) {
+    console.log('SIGNALHOST')
     return new Promise((resolve, reject) => {
         const peer = SimplePeer({initiator: true})
         peer.once('error', reject)
 
-        peer.once('signal', offer => {
-            const buf = new Buffer(JSON.stringify(offer))
-            socket.write(buf)
+        peer.on('signal', offer => {
+            console.log('P1 signal')
+            writeJSONChunk(socket, offer)
         })
 
         peer.once('connect', () => {
+            console.log('P1 connect')
             resolve(peer)
         })
 
-        socket.once('data', data => {
-            const answer = JSON.parse(data.toString())
-            peer.signal(answer)
+        socket.on('data', data => {
+            console.log('P1 answer')
+            readJSONChunk(data, answer => peer.signal(answer))
         })
     })
 }
 
 async function signalPeer(socket) {
+    console.log('SIGNALPEER')
     return new Promise((resolve, reject) => {
-        socket.once('data', data => {
-            const peer = SimplePeer()
-            peer.once('error', reject)
-            
-            peer.once('signal', answer => {
-                const buf = new Buffer(JSON.stringify(answer))
-                socket.write(buf)
-            })
+        const peer = SimplePeer()
+        peer.once('error', reject)
+        
+        peer.on('signal', answer => {
+            console.log('P2 signal')
+            writeJSONChunk(socket, answer)
+        })
 
-            peer.once('connect', () => {
-                resolve(peer)
-            })
-
-            const offer = JSON.parse(data.toString())
-            peer.signal(offer)
+        peer.once('connect', () => {
+            console.log('P2 connect')
+            resolve(peer)
+        })
+        
+        socket.on('data', data => {
+            console.log('P2 offer')
+            readJSONChunk(data, offer => peer.signal(offer))
         })
     })
 }
