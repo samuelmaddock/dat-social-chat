@@ -9,7 +9,7 @@ const sodium = require('sodium-universal')
 const network = require('./network');
 
 const FRIENDSWARM = new Buffer('friendswarm')
-// const DEFAULT_PORT = 3282 + 1
+const DEFAULT_PORT = 3283
 
 function friendDiscoveryKey(tree) {
     var digest = new Buffer(32)
@@ -76,11 +76,14 @@ class App {
         console.info(`Starting local swarm ${id.toString('hex')}`);
         
         const swarmOpts = {
-            hash: false
+            hash: false,
+            dns: false,
+            utp: true,
+            tcp: true
         }
         const swarm = disc(swarmDefaults(swarmOpts))
-        // swarm.listen(DEFAULT_PORT)
-        swarm.join(id, {announce: true})
+        swarm.listen(DEFAULT_PORT)
+        swarm.join(this.archive.dat.archive.discoveryKey)
 
         swarm.once('error', function(){
             console.log('Local swarm error', arguments)
@@ -99,7 +102,6 @@ class App {
                 .then(peer => {
                     console.log('PEER PEER', peer)
                     socket.destroy()
-                    swarm.close()
                 })
         })
 
@@ -186,15 +188,18 @@ class App {
         
         // console.info('Connect', friendId, id)
         const swarmOpts = {
-            hash: false
+            hash: false,
+            dns: false,
+            utp: true,
+            tcp: true
         }
         const swarm = disc(swarmDefaults(swarmOpts))
-        // swarm.listen(DEFAULT_PORT + 1)
-        swarm.join(id, {announce: true})
+        swarm.listen(DEFAULT_PORT+1)
+        swarm.join(this.archive.dat.archive.discoveryKey)
 
         swarm.once('error', function(){
             console.log('Remote swarm error', arguments)
-            // swarm.listen(0)
+            swarm.listen(0)
         })
         
         swarm.on('connection', socket => {
