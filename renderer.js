@@ -6,6 +6,8 @@ const swarmDefaults = require('dat-swarm-defaults')
 const disc = require('discovery-swarm')
 const sodium = require('sodium-universal')
 
+const network = require('./network');
+
 const FRIENDSWARM = new Buffer('friendswarm')
 // const DEFAULT_PORT = 3282 + 1
 
@@ -60,7 +62,7 @@ class App {
         this.archive.dat.network.on('peer', peer => {
             console.info('archive peer', peer);
         });
-
+        
         this.initLocalSwarm()
     }
 
@@ -85,13 +87,18 @@ class App {
             // swarm.listen(0)
         })
         
-        swarm.on('connection', function(socket) {
+        swarm.on('connection', socket => {
             console.log('Local swarm connection', socket)
 
-            socket.on('data', data => {
-                console.log('local data', data)
-                socket.write('world')
-            })
+            const dat = this.archive.dat
+            network.authPeer(socket, dat.archive.key, dat.archive.metadata.secretKey)
+                .then(() => {
+                    console.log(`AUTHED WITH PEER! ${socket.address().address}`)
+                    return network.signalPeer(socket)
+                })
+                .then(peer => {
+                    console.log('PEER PEER', peer)
+                })
         })
 
         this.localSwarm = swarm
@@ -137,10 +144,12 @@ class App {
 
     async onAddFriend() {
         if (!this.$.friendsForm.checkValidity()) {
+            alert('Invalid friend ID')
+            return
         }
         
         const friendId = this.$.friendsForm.friendid.value
-        console.log('Add', friendId)
+        console.log('Add friend', friendId)
         
         if (this.friends.has(friendId)) {
             alert('Friend ID already added')
@@ -162,10 +171,10 @@ class App {
     onConnectToFriend(friendId) {
         const key = Buffer.from(friendId, 'hex')
         const id = friendDiscoveryKey(key)
-        this.connectRemoteSwarm(id)
+        this.connectRemoteSwarm(id, key)
     }
 
-    connectRemoteSwarm(id) {
+    connectRemoteSwarm(id, friendId) {
         if (this.remoteSwarm) {
             this.remoteSwarm.close()
             this.remoteSwarm = null
@@ -186,17 +195,86 @@ class App {
             // swarm.listen(0)
         })
         
-        swarm.once('connection', function(socket) {
+        swarm.on('connection', socket => {
             console.log('Remote swarm connection', socket)
-            socket.on('data', data => {
-                console.log('remote data', data)
-            })
-            socket.write('hello')
+
+            const dat = this.archive.dat
+            network.authHost(socket, dat.archive.key, dat.archive.metadata.secretKey, friendId)
+                .then(() => {
+                    console.log(`AUTHED WITH HOST! ${socket.address().address}`)
+                    return network.signalHost(socket)
+                })
+                .then(peer => {
+                    console.log('HOST PEER', peer)
+                })
         })
 
         this.remoteSwarm = swarm
     }
 }
+
+class ChatRoom {
+    constructor(socket, host) {
+        this.handshake(socket, host).then(() => {
+            this.onAuthed()
+        })
+    }
+
+    async handshake(socket) {
+        // TODO
+    }
+
+    onAuthed(socket) {}
+
+    async signal() {}
+
+    onMessage(action) {
+        switch (action.type) {
+            default:
+                console.warning(`Unknown chat message type=${action.type}`, action)
+        }
+    }
+
+    send(type, payload) {
+        const action = JSON.stringify({type, payload})
+        const buf = Buffer.from(ChatRoom.header + msg, 'utf-8')
+        this.peer.send(msg)
+    }
+
+    receive(buf) {
+        if (buf.slice(0, ChatRoom.header.length).toString('utf-8') !== ChatRoom.header) {
+            this.close()
+            return
+        }
+
+        let action
+        
+        try {
+           action = buf.slice(ChatRoom.header.length, buf.length)
+           action = JSON.parse(action)
+        } catch (e) {
+            console.error('Failed to receive chat action', e)
+            this.close()
+            return
+        }
+
+        this.onMessage(action)
+    }
+    
+    close() {
+        if (this.peer) {
+            this.peer.close()
+            this.peer = undefined
+        }
+
+        if (this.socket) {
+            this.socket.close()
+            this.socket = undefined
+        }
+    }
+}
+
+ChatRoom.header = 'CHAT'
 
 class DatSocialArchive {
     constructor(dat) {
@@ -237,7 +315,7 @@ class DatSocialArchive {
         return new Promise((resolve, reject) => {
             this.dat.archive.readFile('friends.json', (err, buf) => {
                 if (err) {
-                    resolve(new Set());
+                    resolve(new Set())
                 } else {
                     const jsonArray = JSON.parse(buf.toString())
                     const set = new Set(jsonArray)

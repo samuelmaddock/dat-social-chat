@@ -20,6 +20,8 @@
     "electron": "~1.7.8"
   },
   "dependencies": {
-    "dat-node": "^3.5.5"
+    "dat-node": "^3.5.5",
+    "simple-peer": "^8.1.1",
+    "sodium-encryption": "^1.2.3"
   }
 }
