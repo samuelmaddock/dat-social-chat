@@ -1,8 +1,8 @@
-const sodium = require('sodium-universal')
+const sodium = require('sodium-native')
 const enc = require('sodium-encryption')
 const SimplePeer = require('simple-peer')
 
-const SUCCESS = new Buffer(0x1)
+const SUCCESS = new Buffer('chat-auth-success')
 
 function pub2auth(publicKey) {
     const publicAuthKey = new Buffer(sodium.crypto_box_PUBLICKEYBYTES);
@@ -29,6 +29,7 @@ function unseal(cipher, publicKey, secretKey) {
     return msg
 }
 
+/** Auth connection to host */
 async function authHost(socket, publicKey, secretKey, hostKey) {
     const publicAuthKey = pub2auth(publicKey)
     const secretAuthKey = secret2auth(secretKey)
@@ -37,12 +38,13 @@ async function authHost(socket, publicKey, secretKey, hostKey) {
 
     let success, fail
     
-    // send encrypted public key to host
+    /** 1. Send auth request with encrypted identity */
     function sendAuthRequest() {
         const box = seal(publicKey, hostAuthKey)
         socket.write(box)
     }
 
+    /** 2. Receive challenge to decrypt, send back decrypted */
     function receiveChallenge(data) {
         const nonce = data.slice(0, sodium.crypto_box_NONCEBYTES)
         const box = data.slice(sodium.crypto_box_NONCEBYTES, data.length)
@@ -60,6 +62,7 @@ async function authHost(socket, publicKey, secretKey, hostKey) {
         socket.once('data', receiveAuthSuccess)
     }
 
+    /** 3. Receive auth success */
     function receiveAuthSuccess(data) {
         if (data.equals(SUCCESS)) {
             success()
@@ -75,6 +78,7 @@ async function authHost(socket, publicKey, secretKey, hostKey) {
     })
 }
 
+/** Auth connection to peer */
 async function authPeer(socket, publicKey, secretKey) {
     const publicAuthKey = pub2auth(publicKey)
     const secretAuthKey = secret2auth(secretKey)
@@ -85,6 +89,7 @@ async function authPeer(socket, publicKey, secretKey) {
     let sharedKey
     let challenge
     
+    /** 1. Learn peer identity */
     function receiveAuthRequest(data) {
         const buf = Buffer.from(data)
         peerPublicKey = unseal(buf, publicAuthKey, secretAuthKey)
@@ -105,6 +110,7 @@ async function authPeer(socket, publicKey, secretKey) {
         sendChallenge(peerPublicKey)
     }
 
+    /** 2. Respond with challenge to decrypt */
     function sendChallenge(peerKey) {
         challenge = enc.nonce()
             
@@ -119,6 +125,7 @@ async function authPeer(socket, publicKey, secretKey) {
         socket.once('data', receiveChallengeVerification)
     }
 
+    /** 3. Verify decrypted challenge */
     function receiveChallengeVerification(data) {
         const nonce = data.slice(0, sodium.crypto_box_NONCEBYTES)
         const box = data.slice(sodium.crypto_box_NONCEBYTES, data.length)
@@ -165,47 +172,49 @@ function readJSONChunk(data, cb) {
     }  
 }
 
+/** Initiate WebRTC signaling with host */
 async function signalHost(socket) {
-    console.log('SIGNALHOST')
+    console.debug('SIGNALHOST')
     return new Promise((resolve, reject) => {
         const peer = SimplePeer({initiator: true})
         peer.once('error', reject)
 
         peer.on('signal', offer => {
-            console.log('P1 signal')
+            console.debug('P1 signal')
             writeJSONChunk(socket, offer)
         })
 
         peer.once('connect', () => {
-            console.log('P1 connect')
+            console.debug('P1 connect')
             resolve(peer)
         })
 
         socket.on('data', data => {
-            console.log('P1 answer')
+            console.debug('P1 answer')
             readJSONChunk(data, answer => peer.signal(answer))
         })
     })
 }
 
+/** Await and complete WebRTC signaling with peer */
 async function signalPeer(socket) {
-    console.log('SIGNALPEER')
+    console.debug('SIGNALPEER')
     return new Promise((resolve, reject) => {
         const peer = SimplePeer()
         peer.once('error', reject)
         
         peer.on('signal', answer => {
-            console.log('P2 signal')
+            console.debug('P2 signal')
             writeJSONChunk(socket, answer)
         })
 
         peer.once('connect', () => {
-            console.log('P2 connect')
+            console.debug('P2 connect')
             resolve(peer)
         })
         
         socket.on('data', data => {
-            console.log('P2 offer')
+            console.debug('P2 offer')
             readJSONChunk(data, offer => peer.signal(offer))
         })
     })
