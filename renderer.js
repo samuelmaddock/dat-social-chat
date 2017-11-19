@@ -220,16 +220,17 @@ class App {
     }
 
     onConnectToFriend(friendId) {
-        const key = Buffer.from(friendId, 'hex')
-        const id = friendDiscoveryKey(key)
-        this.connectRemoteSwarm(id, key)
+        this.connectRemoteSwarm(friendId)
     }
 
-    connectRemoteSwarm(id, friendId) {
+    connectRemoteSwarm(friendId) {
         if (this.remoteSwarm) {
             this.remoteSwarm.close()
             this.remoteSwarm = null
         }
+
+        const friendKey = Buffer.from(friendId, 'hex')
+        const id = friendDiscoveryKey(friendKey)
         
         console.info(`Connecting to remote swarm ${id.toString('hex')}...`)
         
@@ -249,7 +250,7 @@ class App {
             console.log('Remote swarm connection', socket)
 
             const dat = this.archive.dat
-            network.authHost(socket, dat.archive.key, dat.archive.metadata.secretKey, friendId)
+            network.authHost(socket, dat.archive.key, dat.archive.metadata.secretKey, friendKey)
                 .then(() => {
                     console.log(`AUTHED WITH HOST! ${socket.address().address}`)
                     return network.signalHost(socket)
@@ -258,6 +259,7 @@ class App {
                     console.info('HOST PEER', peer)
                     socket.destroy()
                     swarm.close()
+                    this.setupChat(peer, friendKey)
                 })
         })
 
