@@ -81,12 +81,13 @@ async function authPeer(socket, publicKey, secretKey) {
 
     let success, fail
     
+    let peerPublicKey
     let sharedKey
     let challenge
     
     function receiveAuthRequest(data) {
         const buf = Buffer.from(data)
-        const peerPublicKey = unseal(buf, publicAuthKey, secretAuthKey)
+        peerPublicKey = unseal(buf, publicAuthKey, secretAuthKey)
         
         if (!peerPublicKey) {
             console.error('Failed to unseal peer box')
@@ -126,7 +127,7 @@ async function authPeer(socket, publicKey, secretKey) {
 
         if (challenge.equals(decryptedChallenge)) {
             socket.write(SUCCESS)
-            success()
+            success(peerPublicKey)
         } else {
             fail()
         }

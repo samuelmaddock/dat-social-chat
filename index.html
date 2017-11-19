@@ -43,14 +43,16 @@
       </form>
     </fieldset>
     <br>
-    <fieldset disabled>
+    <fieldset class="chat-fieldset" disabled>
       <legend>Chat</legend>
-      <div>Not connected</div>
+      <ul class="chat-messages"></ul>
       <ul style="max-height: 500px; overflow-y: auto;"></ul>
       <hr>
-      <input type="text">
-      <button type="button">Send</button>
-      <button type="button">Disconnect</button>
+      <form class="chat-form">
+        <input type="text" name="message" required minlength="1">
+        <button type="button" class="chat-send-btn">Send</button>
+        <button type="button">Disconnect</button>
+      </form>
     </fieldset>
   </main>
 

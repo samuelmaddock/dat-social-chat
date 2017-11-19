@@ -1,5 +1,6 @@
 const fs = require('fs')
 const path = require('path')
+const EventEmitter = require('events')
 
 const Dat = require('dat-node')
 const swarmDefaults = require('dat-swarm-defaults')
@@ -8,7 +9,7 @@ const sodium = require('sodium-universal')
 
 const network = require('./network');
 
-const FRIENDSWARM = new Buffer('friendswarm')
+const FRIENDSWARM = new Buffer('swarm2')
 const DEFAULT_PORT = 3283
 
 function friendDiscoveryKey(tree) {
@@ -32,12 +33,21 @@ class App {
             friendsForm: $('.friends-form'),
             friendsList: $('.friends-list'),
             friendsAddBtn: $('.friends-add-btn'),
+
+            chatFieldset: $('.chat-fieldset'),
+            chatForm: $('.chat-form'),
+            chatMessages: $('.chat-messages'),
+            chatInput: $('.chat-form input[name=message]'),
+            chatSendBtn: $('.chat-send-btn')
         }
         
         this.$.profileCreateBtn.addEventListener('click', this.onSaveProfile.bind(this), false)
         this.$.profileSaveBtn.addEventListener('click', this.onSaveProfile.bind(this), false)
 
         this.$.friendsAddBtn.addEventListener('click', this.onAddFriend.bind(this), false)
+
+        this.$.chatInput.addEventListener('keypress', this.onChatKeyPress.bind(this), false)
+        this.$.chatSendBtn.addEventListener('click', this.onSendChat.bind(this), false)
 
         await this.initDat()
         this.updateUI()
@@ -76,10 +86,7 @@ class App {
         console.info(`Starting local swarm ${id.toString('hex')}`);
         
         const swarmOpts = {
-            hash: false,
-            dns: false,
-            utp: true,
-            tcp: true
+            hash: false
         }
         const swarm = disc(swarmDefaults(swarmOpts))
         swarm.listen(DEFAULT_PORT)
@@ -92,20 +99,29 @@ class App {
         
         swarm.on('connection', socket => {
             console.log('Local swarm connection', socket)
-
+            let peerKey
             const dat = this.archive.dat
             network.authPeer(socket, dat.archive.key, dat.archive.metadata.secretKey)
-                .then(() => {
+                .then((peerPublicKey) => {
                     console.log(`AUTHED WITH PEER! ${socket.address().address}`)
+                    peerKey = peerPublicKey
                     return network.signalPeer(socket)
                 })
                 .then(peer => {
                     console.log('PEER PEER', peer)
                     socket.destroy()
+                    this.setupChat(peer, peerKey)
                 })
         })
 
         this.localSwarm = swarm
+    }
+
+    setupChat(peer, peerKey) {
+        this.chat = new ChatRoom(peer, peerKey)
+        this.chat.on('message', this.updateUI.bind(this))
+        
+        this.updateUI()
     }
     
     updateUI() {
@@ -132,6 +148,19 @@ class App {
             });
         } else {
             this.$.friendsList.innerHTML = 'No friends yet :('
+        }
+
+        this.$.chatFieldset.disabled = !this.chat;
+
+        if (this.chat) {
+            this.$.chatMessages.innerHTML = ''
+            this.chat.messages.forEach(message => {
+                const el = document.createElement('li')
+                el.innerText = `${message.author}: ${message.text}`
+                this.$.chatMessages.appendChild(el)
+            });
+        } else {
+            this.$.chatMessages.innerHTML = 'Not connected'
         }
     }
 
@@ -172,6 +201,24 @@ class App {
         this.updateUI()
     }
 
+    onChatKeyPress(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault()
+            this.onSendChat()
+        }
+    }
+    
+    onSendChat() {
+        if (!this.$.chatForm.checkValidity()) {
+            return
+        }
+
+        const message = this.$.chatForm.message.value
+        this.chat.sendMessage(message)
+
+        this.$.chatForm.message.value = '';
+    }
+
     onConnectToFriend(friendId) {
         const key = Buffer.from(friendId, 'hex')
         const id = friendDiscoveryKey(key)
@@ -186,12 +233,8 @@ class App {
         
         console.info(`Connecting to remote swarm ${id.toString('hex')}...`)
         
-        // console.info('Connect', friendId, id)
         const swarmOpts = {
-            hash: false,
-            dns: false,
-            utp: true,
-            tcp: true
+            hash: false
         }
         const swarm = disc(swarmDefaults(swarmOpts))
         swarm.listen(DEFAULT_PORT+1)
@@ -222,23 +265,32 @@ class App {
     }
 }
 
-class ChatRoom {
-    constructor(socket, host) {
-        this.handshake(socket, host).then(() => {
-            this.onAuthed()
+class ChatRoom extends EventEmitter {
+    constructor(peer, peerKey) {
+        super()
+
+        this.peer = peer
+        this.peerKey = peerKey
+
+        this.peer.on('close', () => {
+            this.peer = undefined
+            this.close()
         })
+
+        this.peer.on('data', this.receive.bind(this))
+
+        this.messages = [];
     }
 
-    async handshake(socket) {
-        // TODO
+    get peerId() {
+        return this.peerKey.toString('hex')
     }
 
-    onAuthed(socket) {}
-
-    async signal() {}
-
-    onMessage(action) {
+    dispatch(action) {
         switch (action.type) {
+            case 'message':
+                this.onMessage(action.payload, this.peerId)
+                break;
             default:
                 console.warning(`Unknown chat message type=${action.type}`, action)
         }
@@ -246,8 +298,8 @@ class ChatRoom {
 
     send(type, payload) {
         const action = JSON.stringify({type, payload})
-        const buf = Buffer.from(ChatRoom.header + msg, 'utf-8')
-        this.peer.send(msg)
+        const buf = Buffer.from(ChatRoom.header + action, 'utf-8')
+        this.peer.send(buf)
     }
 
     receive(buf) {
@@ -267,7 +319,7 @@ class ChatRoom {
             return
         }
 
-        this.onMessage(action)
+        this.dispatch(action)
     }
     
     close() {
@@ -276,10 +328,22 @@ class ChatRoom {
             this.peer = undefined
         }
 
-        if (this.socket) {
-            this.socket.close()
-            this.socket = undefined
+        this.emit('close')
+    }
+
+    sendMessage(message) {
+        this.send('message', message)
+        this.onMessage(message)
+    }
+
+    onMessage(message, author = 'me') {
+        const envelope = {
+            from: author,
+            text: message
         }
+
+        this.messages.push(envelope)
+        this.emit('message', envelope)
     }
 }
 
