@@ -35,10 +35,12 @@ class App {
             friendsAddBtn: $('.friends-add-btn'),
 
             chatFieldset: $('.chat-fieldset'),
+            chatTitle: $('.chat-title'),
             chatForm: $('.chat-form'),
             chatMessages: $('.chat-messages'),
             chatInput: $('.chat-form input[name=message]'),
-            chatSendBtn: $('.chat-send-btn')
+            chatSendBtn: $('.chat-send-btn'),
+            chatDisconnectBtn: $('.chat-disconnect-btn'),
         }
         
         this.$.profileCreateBtn.addEventListener('click', this.onSaveProfile.bind(this), false)
@@ -48,6 +50,7 @@ class App {
 
         this.$.chatInput.addEventListener('keypress', this.onChatKeyPress.bind(this), false)
         this.$.chatSendBtn.addEventListener('click', this.onSendChat.bind(this), false)
+        this.$.chatDisconnectBtn.addEventListener('click', this.onDisconnectChat.bind(this), false)
 
         await this.initDat()
         this.updateUI()
@@ -92,9 +95,9 @@ class App {
         swarm.listen(DEFAULT_PORT)
         swarm.join(id)
 
-        swarm.once('error', function(){
+        swarm.on('error', function(){
             console.log('Local swarm error', arguments)
-            // swarm.listen(0)
+            swarm.listen(0)
         })
         
         swarm.on('connection', socket => {
@@ -119,7 +122,12 @@ class App {
 
     setupChat(peer, peerKey) {
         this.chat = new ChatRoom(peer, peerKey)
+
         this.chat.on('message', this.updateUI.bind(this))
+        this.chat.on('close', () => {
+            this.chat = undefined
+            this.updateUI()
+        })
         
         this.updateUI()
     }
@@ -153,6 +161,8 @@ class App {
         this.$.chatFieldset.disabled = !this.chat;
 
         if (this.chat) {
+            this.$.chatTitle.innerText = `Chat: ${this.chat.peerId}`
+            
             this.$.chatMessages.innerHTML = ''
             this.chat.messages.forEach(message => {
                 const el = document.createElement('li')
@@ -160,6 +170,7 @@ class App {
                 this.$.chatMessages.appendChild(el)
             });
         } else {
+            this.$.chatTitle.innerText = 'Chat'
             this.$.chatMessages.innerHTML = 'Not connected'
         }
     }
@@ -219,6 +230,12 @@ class App {
         this.$.chatForm.message.value = '';
     }
 
+    onDisconnectChat() {
+        if (this.chat) {
+            this.chat.close()
+        }
+    }
+
     onConnectToFriend(friendId) {
         this.connectRemoteSwarm(friendId)
     }
@@ -241,7 +258,7 @@ class App {
         swarm.listen(DEFAULT_PORT+1)
         swarm.join(id)
 
-        swarm.once('error', function(){
+        swarm.on('error', function(){
             console.log('Remote swarm error', arguments)
             swarm.listen(0)
         })
@@ -326,7 +343,7 @@ class ChatRoom extends EventEmitter {
     
     close() {
         if (this.peer) {
-            this.peer.close()
+            this.peer.destroy()
             this.peer = undefined
         }
 
