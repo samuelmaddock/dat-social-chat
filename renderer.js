@@ -338,14 +338,10 @@ class ChatRoom extends EventEmitter {
         this.onMessage(message)
     }
 
-    onMessage(message, author = 'me') {
-        const envelope = {
-            from: author,
-            text: message
-        }
-
-        this.messages.push(envelope)
-        this.emit('message', envelope)
+    onMessage(text, author = 'me') {
+        const message = { author, text }
+        this.messages.push(message)
+        this.emit('message', message)
     }
 }
 
