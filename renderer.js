@@ -4,13 +4,20 @@ const EventEmitter = require('events')
 
 const Dat = require('dat-node')
 const swarmDefaults = require('dat-swarm-defaults')
-const disc = require('discovery-swarm')
+const discoverySwarm = require('discovery-swarm')
 const sodium = require('sodium-universal')
 
 const network = require('./network');
 
 const FRIENDSWARM = new Buffer('swarm2')
 const DEFAULT_PORT = 3283
+
+const SWARM_OPTS = {
+    hash: false,
+    utp: true,
+    tcp: true,
+    dns: false
+}
 
 function friendDiscoveryKey(tree) {
     var digest = new Buffer(32)
@@ -87,11 +94,8 @@ class App {
         
         const id = friendDiscoveryKey(this.archive.dat.key)
         console.info(`Starting local swarm ${id.toString('hex')}`);
-        
-        const swarmOpts = {
-            hash: false
-        }
-        const swarm = disc(swarmDefaults(swarmOpts))
+
+        const swarm = discoverySwarm(swarmDefaults(SWARM_OPTS))
         swarm.listen(DEFAULT_PORT)
         swarm.join(id)
 
@@ -158,6 +162,7 @@ class App {
             this.$.friendsList.innerHTML = 'No friends yet :('
         }
 
+        // Chat
         this.$.chatFieldset.disabled = !this.chat;
 
         if (this.chat) {
@@ -251,10 +256,7 @@ class App {
         
         console.info(`Connecting to remote swarm ${id.toString('hex')}...`)
         
-        const swarmOpts = {
-            hash: false
-        }
-        const swarm = disc(swarmDefaults(swarmOpts))
+        const swarm = discoverySwarm(swarmDefaults(SWARM_OPTS))
         swarm.listen(DEFAULT_PORT+1)
         swarm.join(id)
 
@@ -435,7 +437,13 @@ class DatSocialArchive {
                     console.log('Importing ', src.name, ' into archive')
                 })
                 
-                dat.joinNetwork()
+                // TEMP: test DHT-only connections
+                dat.joinNetwork({
+                    hash: false,
+                    utp: true,
+                    tcp: true,
+                    dns: false
+                })
 
                 console.info(`My dat link is: dat://${dat.key.toString('hex')}`)
 
