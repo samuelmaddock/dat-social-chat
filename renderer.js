@@ -110,7 +110,11 @@ class App {
 
         const swarm = discoverySwarm(swarmDefaults(SWARM_OPTS))
         swarm.listen(DEFAULT_PORT)
+<<<<<<< 978c352331f2bb9373205020c08797718a212ce3
         swarm.join(id, { announce: true })
+=======
+        swarm.join(id, {announce: true})
+>>>>>>> Announce self on local swarm
 
         swarm.on('error', function(){
             console.log('Local swarm error', arguments)
