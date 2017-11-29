@@ -1,6 +1,8 @@
 # Dat Social Chat
 
-A small prototype chat application built using [Electron](https://electronjs.org/) and [Dat](https://datproject.org/).
+A small prototype P2P chat application built using [Electron](https://electronjs.org/) and [Dat](https://datproject.org/).
+
+![screenshot](screenshot.png)
 
 ## Install
 ```bash
