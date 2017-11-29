@@ -53,8 +53,8 @@ _See [network.js](network.js) for implementation._
 When Bob wants to connect to Alice, Bob will know Alice's public key ahead of time.
 
 1. Bob sends his public key to Alice encrypted with her public key.
-1. Alice uses her private key to decrypt Bob's public key. Alice sends an encrypted nonce to Bob using his public key.
-1. Bob decrypts the nonce using his private key and sends it back encrypted with Alice's public key.
-1. Alice decrypts the nonce with her private key and verifies it's the same nonce originally sent. Alice sends an authentication success message to Bob.
+1. Alice uses her private key to decrypt Bob's public key. Alice [creates a shared key](https://download.libsodium.org/doc/key_exchange/#purpose) using Bob's public key and her private key to send an encrypted nonce to Bob.
+1. Bob creates his own shared key using Alice's public key and his private key. Bob uses the shared key to decrypt the nonce and send it back encrypted.
+1. Alice decrypts the nonce with the shared key and verifies it's the same nonce originally sent. Alice sends an authentication success message to Bob.
 
 Following authentication, Bob performs WebRTC signalling  over the same connection using the [steps defined in the Simple Peer library](https://github.com/feross/simple-peer#data-channels).
