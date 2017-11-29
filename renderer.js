@@ -6,6 +6,7 @@ const Dat = require('dat-node')
 const swarmDefaults = require('dat-swarm-defaults')
 const discoverySwarm = require('discovery-swarm')
 const sodium = require('sodium-universal')
+const ram = require('random-access-memory')
 
 const network = require('./network');
 
@@ -13,10 +14,11 @@ const FRIENDSWARM = new Buffer('swarm2')
 const DEFAULT_PORT = 3283
 
 const SWARM_OPTS = {
-    hash: false,
-    utp: true,
-    tcp: true,
-    dns: false
+    hash: false
+}
+
+function key2str(key) {
+    return typeof key === 'string' ? key : key.toString('hex')
 }
 
 function friendDiscoveryKey(tree) {
@@ -27,6 +29,10 @@ function friendDiscoveryKey(tree) {
 }
 
 class App {
+    get localKey() {
+        return this.archive ? this.archive.dat.key : null;
+    }
+    
     async init() {
         const $ = document.querySelector.bind(document)
 
@@ -59,14 +65,17 @@ class App {
         this.$.chatSendBtn.addEventListener('click', this.onSendChat.bind(this), false)
         this.$.chatDisconnectBtn.addEventListener('click', this.onDisconnectChat.bind(this), false)
 
+        this.updateUI = this.updateUI.bind(this)
+        
         await this.initDat()
         this.updateUI()
+        friendLoader.on('update', this.updateUI)
         console.info('Initialized app')
     }
 
     async initDat() {
         try {
-            this.archive = await DatSocialArchive.get('./dat')
+            this.archive = await DatSocialArchive.getLocal()
         } catch (e) {
             console.log(e)
             return
@@ -74,7 +83,7 @@ class App {
 
         this.profile = await this.archive.getProfile()
         this.friends = await this.archive.getFriends()
-
+        
         this.archive.dat.network.on('connection', function() {
             console.info('archive connection', arguments);
         });
@@ -84,6 +93,8 @@ class App {
         });
         
         this.initLocalSwarm()
+
+        this.friends.forEach(friendId => friendLoader.loadFriendArchive(friendId));
     }
 
     initLocalSwarm() {
@@ -97,7 +108,7 @@ class App {
 
         const swarm = discoverySwarm(swarmDefaults(SWARM_OPTS))
         swarm.listen(DEFAULT_PORT)
-        swarm.join(id)
+        swarm.join(id, { announce: true })
 
         swarm.on('error', function(){
             console.log('Local swarm error', arguments)
@@ -125,7 +136,7 @@ class App {
     }
 
     setupChat(peer, peerKey) {
-        this.chat = new ChatRoom(peer, peerKey)
+        this.chat = new ChatRoom(peer, peerKey, this.localKey)
 
         this.chat.on('message', this.updateUI.bind(this))
         this.chat.on('close', () => {
@@ -154,8 +165,15 @@ class App {
             this.$.friendsList.innerHTML = ''
             this.friends.forEach(friendId => {
                 const el = document.createElement('li')
-                el.innerText = friendId
-                el.onclick = this.onConnectToFriend.bind(this, friendId)
+                el.innerText = friendLoader.resolveName(friendId) + ' '
+                
+                const connect = document.createElement('a')
+                connect.innerText = 'Connect'
+                connect.href = 'javascript:void(0)'
+                connect.onclick = this.onConnectToFriend.bind(this, friendId)
+
+                el.appendChild(connect)
+                
                 this.$.friendsList.appendChild(el)
             });
         } else {
@@ -166,12 +184,12 @@ class App {
         this.$.chatFieldset.disabled = !this.chat;
 
         if (this.chat) {
-            this.$.chatTitle.innerText = `Chat: ${this.chat.peerId}`
+            this.$.chatTitle.innerText = `Chat: ${friendLoader.resolveName(this.chat.peerId)}`
             
             this.$.chatMessages.innerHTML = ''
             this.chat.messages.forEach(message => {
                 const el = document.createElement('li')
-                el.innerText = `${message.author}: ${message.text}`
+                el.innerText = `${friendLoader.resolveName(message.author)}: ${message.text}`
                 this.$.chatMessages.appendChild(el)
             });
         } else {
@@ -201,7 +219,7 @@ class App {
         console.log('Add friend', friendId)
         
         if (this.friends.has(friendId)) {
-            alert('Friend ID already added')
+            console.warn('Friend ID already added')
             return
         }
 
@@ -215,6 +233,8 @@ class App {
         this.$.friendsFieldset.disabled = false;
 
         this.updateUI()
+
+        friendLoader.loadFriendArchive(friendId)
     }
 
     onChatKeyPress(e) {
@@ -287,11 +307,12 @@ class App {
 }
 
 class ChatRoom extends EventEmitter {
-    constructor(peer, peerKey) {
+    constructor(peer, peerKey, localKey) {
         super()
 
         this.peer = peer
         this.peerKey = peerKey
+        this.localKey = localKey
 
         this.peer.on('close', () => {
             this.peer = undefined
@@ -304,7 +325,7 @@ class ChatRoom extends EventEmitter {
     }
 
     get peerId() {
-        return this.peerKey.toString('hex')
+        return key2str(this.peerKey)
     }
 
     dispatch(action) {
@@ -354,10 +375,10 @@ class ChatRoom extends EventEmitter {
 
     sendMessage(message) {
         this.send('message', message)
-        this.onMessage(message)
+        this.onMessage(message, this.localKey)
     }
 
-    onMessage(text, author = 'me') {
+    onMessage(text, author) {
         const message = { author, text }
         this.messages.push(message)
         this.emit('message', message)
@@ -387,9 +408,9 @@ class DatSocialArchive {
         return new Promise((resolve, reject) => {
             this.dat.archive.readFile('profile.json', (err, buf) => {
                 if (err) {
-                    resolve(null);
+                    reject()
                 } else {
-                    const json = JSON.parse(buf.toString())
+                    const json = JSON.parse(buf.toString('utf-8'))
                     resolve(json)
                 }
             })
@@ -420,39 +441,72 @@ class DatSocialArchive {
         fs.writeFileSync(this.friendsPath, array)
     }
     
-    static get(dirpath) {
+    static get(dirOrStorage, opts = {}) {
         return new Promise((resolve, reject) => {
-            if (!fs.existsSync(dirpath)) {
-                fs.mkdir(dirpath)
-            }
-            
-            Dat(dirpath, (err, dat) => {
+            Dat(dirOrStorage, opts, (err, dat) => {
                 if (err) {
                     reject(err)
                     return
                 }
-
-                const progress = dat.importFiles({watch: true})
-                progress.on('put', function (src, dest) {
-                    console.log('Importing ', src.name, ' into archive')
-                })
                 
-                // TEMP: test DHT-only connections
-                dat.joinNetwork({
-                    hash: false,
-                    utp: true,
-                    tcp: true,
-                    dns: false
-                })
+                dat.joinNetwork(err => {
+                    reject(err)
 
-                console.info(`My dat link is: dat://${dat.key.toString('hex')}`)
+                    // After the first round of network checks, the callback is called
+                    // If no one is online, you can exit and let the user know.
+                    if (!dat.network.connected || !dat.network.connecting) {
+                        reject('Failed to load archive')
+                    }
+                })
 
                 const archive = new DatSocialArchive(dat);
                 resolve(archive)
             })
         })
     }
+
+    static async getLocal() {
+        const dirpath = './dat';
+        
+        if (!fs.existsSync(dirpath)) {
+            fs.mkdir(dirpath)
+        }
+
+        const archive = await DatSocialArchive.get(dirpath)
+        const dat = archive.dat
+
+        const progress = dat.importFiles({watch: true})
+        progress.on('put', function (src, dest) {
+            console.log('Importing ', src.name, ' into archive')
+        })
+        
+        console.info(`My dat link is: dat://${key2str(dat.key)}`)
+
+        return archive
+    }
 }
+
+class FriendLoader extends EventEmitter {
+    constructor() {
+        super()
+        this.cache = new Map()
+    }
+    
+    resolveName(friendId) {
+        const key = key2str(friendId)
+        const shortKey = key.substr(0,7)
+        return this.cache.has(key) && this.cache.get(key).name || shortKey
+    }
+
+    async loadFriendArchive(friendId) {
+        const archive = await DatSocialArchive.get(ram, { key: friendId })
+        const profile = await archive.getProfile()
+        this.cache.set(key2str(friendId), profile)
+        this.emit('update')
+    }
+}
+
+const friendLoader = new FriendLoader()
 
 function init() {
     const app = new App()
