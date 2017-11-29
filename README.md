@@ -1,45 +1,52 @@
-# electron-quick-start
+# Dat Social Chat
 
-**Clone and run for a quick way to see Electron in action.**
+A small prototype chat application built using [Electron](https://electronjs.org/) and [Dat](https://datproject.org/).
 
-This is a minimal Electron application based on the [Quick Start Guide](http://electron.atom.io/docs/tutorial/quick-start) within the Electron documentation.
+## Peer profiles using Dat
 
-**Use this app along with the [Electron API Demos](http://electron.atom.io/#get-started) app for API code examples to help you get started.**
+Dat is peer to peer (p2p) protocol for building distributed apps. [Hyperdrive](https://github.com/mafintosh/hyperdrive), built ontop of Dat, provides a distributed file system which peers use to upload their profile to peers.
 
-A basic Electron application needs just these files:
+A hyperdrive archive provides its own public key which peers can use to find each other. It's a 64-character hex encoded string (e.g. `'1899b1f0a006cd0419545cb13c7f2ddc46c650e9512213a0899e5947a6a4d819'`). This means peers are hidden by default unless they distribute their public key.
 
-- `package.json` - Points to the app's main file and lists its details and dependencies.
-- `main.js` - Starts the app and creates a browser window to render HTML. This is the app's **main process**.
-- `index.html` - A web page to render. This is the app's **renderer process**.
+### profile.json
 
-You can learn more about each of these components within the [Quick Start Guide](http://electron.atom.io/docs/tutorial/quick-start).
+This file exists in a peer's hyperdrive archive as a way to provide public information about a peer. In this case, a peer's name.
 
-## To Use
-
-To clone and run this repository you'll need [Git](https://git-scm.com) and [Node.js](https://nodejs.org/en/download/) (which comes with [npm](http://npmjs.com)) installed on your computer. From your command line:
-
-```bash
-# Clone this repository
-git clone https://github.com/electron/electron-quick-start
-# Go into the repository
-cd electron-quick-start
-# Install dependencies
-npm install
-# Run the app
-npm start
+```json
+{
+    "name": "Sam"
+}
 ```
 
-Note: If you're using Linux Bash for Windows, [see this guide](https://www.howtogeek.com/261575/how-to-run-graphical-linux-desktop-applications-from-windows-10s-bash-shell/) or use `node` from the command prompt.
+This file is downloaded by peers to display a more friendly name.
 
-## Resources for Learning Electron
+### friends.json
 
-- [electron.atom.io/docs](http://electron.atom.io/docs) - all of Electron's documentation
-- [electron.atom.io/community/#boilerplates](http://electron.atom.io/community/#boilerplates) - sample starter apps created by the community
-- [electron/electron-quick-start](https://github.com/electron/electron-quick-start) - a very basic starter Electron app
-- [electron/simple-samples](https://github.com/electron/simple-samples) - small applications with ideas for taking them further
-- [electron/electron-api-demos](https://github.com/electron/electron-api-demos) - an Electron app that teaches you how to use Electron
-- [hokein/electron-sample-apps](https://github.com/hokein/electron-sample-apps) - small demo apps for the various Electron APIs
+Each peer maintains a list of their friend keys. Currently this is only used locally.
 
-## License
+## Chatting with WebRTC
 
-[CC0 1.0 (Public Domain)](LICENSE.md)
+To chat with peers, a WebRTC data channel connection is created to provide low latency, encrypted communication.
+
+### Connection overview
+
+Each local peer creates a network swarm, using [discovery-swarm](https://github.com/mafintosh/discovery-swarm), which acts as a lobby for other peers to initiate a connection. A simple challenge-response authentication process is used to verify each peer's identity. Following authentication, peers perform WebRTC signalling to create a WebRTC connection.
+
+### Authentication
+
+When a peer wants to connect to another peer, they need to verify each others' identity so they can be sure they're talking to the right person. This is accomplished using elliptic-curve cryptography via [libsodium](https://libsodium.org).
+
+Each peer's hyperdrive key pair is [converted from Ed25519 to Curve25519](https://download.libsodium.org/doc/advanced/ed25519-curve25519.html) to perform authenticated encryption.
+
+_See [network.js](network.js) for implementation._
+
+#### Peer (Bob) connecting to host (Alice)
+
+When Bob wants to connect to Alice, Bob will know Alice's public key ahead of time.
+
+1. Bob sends his public key to Alice encrypted with her public key.
+1. Alice uses her private key to decrypt Bob's public key. Alice sends an encrypted nonce to Bob using his public key.
+1. Bob decrypts the nonce using his private key and sends it back encrypted with Alice's public key.
+1. Alice decrypts the nonce with her private key and verifies it's the same nonce originally sent. Alice sends an authentication success message to Bob.
+
+Following authentication, Bob performs WebRTC signalling  over the same connection using the [steps defined in the Simple Peer library](https://github.com/feross/simple-peer#data-channels).
