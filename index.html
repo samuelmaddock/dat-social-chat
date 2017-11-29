@@ -38,7 +38,7 @@
       <ul class="friends-list"></ul>
       <hr>
       <form class="friends-form">
-        <input type="text" name="friendid" minlength="64" maxlength="64" required />
+        <input type="text" name="friendid" pattern="[a-fA-F0-9]{64}" required />
         <button type="button" class="friends-add-btn">Add friend</button>
       </form>
     </fieldset>
