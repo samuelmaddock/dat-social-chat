@@ -17,6 +17,8 @@ const SWARM_OPTS = {
     hash: false
 }
 
+const DEFAULT_NAME = 'Foobar'
+
 function key2str(key) {
     return typeof key === 'string' ? key : key.toString('hex')
 }
@@ -81,7 +83,7 @@ class App {
             return
         }
 
-        this.profile = await this.archive.getProfile()
+        this.profile = await this.archive.getOrCreateProfile()
         this.friends = await this.archive.getFriends()
         
         this.archive.dat.network.on('connection', function() {
@@ -152,7 +154,7 @@ class App {
         
         // Profile
         this.$.profileForm.id.value = archive ? archive.id : ''
-        this.$.profileForm.name.value = profile ? profile.name : this.$.profileForm.name.value || 'Foobar'
+        this.$.profileForm.name.value = profile ? profile.name : this.$.profileForm.name.value || DEFAULT_NAME
         this.$.profileCreateBtn.disabled = !!archive
         this.$.profileSaveBtn.disabled = !archive
 
@@ -415,6 +417,16 @@ class DatSocialArchive {
                 }
             })
         });
+    }
+
+    async getOrCreateProfile() {
+        try {
+            return await this.getProfile()
+        } catch (e) {
+            const profile = { name: DEFAULT_NAME }
+            await this.updateProfile(profile)
+            return profile
+        }
     }
 
     updateProfile(profile) {
