@@ -2,6 +2,12 @@
 
 A small prototype chat application built using [Electron](https://electronjs.org/) and [Dat](https://datproject.org/).
 
+## Install
+```bash
+npm install # or yarn
+npm start
+```
+
 ## Peer profiles using Dat
 
 Dat is peer to peer (p2p) protocol for building distributed apps. [Hyperdrive](https://github.com/mafintosh/hyperdrive), built ontop of Dat, provides a distributed file system which peers use to upload their profile to peers.
