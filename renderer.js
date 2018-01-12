@@ -9,6 +9,7 @@ const sodium = require('sodium-universal')
 const ram = require('random-access-memory')
 
 const network = require('./network');
+const { EncryptedSocket } = network;
 
 const FRIENDSWARM = new Buffer('swarm2')
 const DEFAULT_PORT = 3283
@@ -119,19 +120,24 @@ class App {
         
         swarm.on('connection', socket => {
             console.log('Local swarm connection', socket)
-            let peerKey
+
             const dat = this.archive.dat
-            network.authPeer(socket, dat.archive.key, dat.archive.metadata.secretKey)
-                .then((peerPublicKey) => {
-                    console.log(`AUTHED WITH PEER! ${socket.address().address}`)
-                    peerKey = peerPublicKey
-                    return network.signalPeer(socket)
-                })
-                .then(peer => {
+            const publicKey = dat.archive.key
+            const secretKey = dat.archive.metadata.secretKey
+            
+            const esocket = new EncryptedSocket(socket, publicKey, secretKey)
+
+            esocket.once('connection', () => {
+                console.log(`AUTHED WITH PEER! ${socket.address().address}`)
+                network.signalPeer(esocket).then(peer => {
+                    const peerKey = esocket.peerKey
                     console.log('PEER PEER', peer)
-                    socket.destroy()
+                    esocket.destroy()
                     this.setupChat(peer, peerKey)
-                })
+                });
+            })
+
+            esocket.connect()
         })
 
         this.localSwarm = swarm
@@ -291,17 +297,22 @@ class App {
             console.log('Remote swarm connection', socket)
 
             const dat = this.archive.dat
-            network.authHost(socket, dat.archive.key, dat.archive.metadata.secretKey, friendKey)
-                .then(() => {
-                    console.log(`AUTHED WITH HOST! ${socket.address().address}`)
-                    return network.signalHost(socket)
-                })
-                .then(peer => {
+            const publicKey = dat.archive.key
+            const secretKey = dat.archive.metadata.secretKey
+            
+            const esocket = new EncryptedSocket(socket, publicKey, secretKey)
+
+            esocket.once('connection', () => {
+                console.log(`AUTHED WITH HOST! ${socket.address().address}`)
+                network.signalHost(esocket).then(peer => {
                     console.info('HOST PEER', peer)
-                    socket.destroy()
+                    esocket.destroy()
                     swarm.close()
                     this.setupChat(peer, friendKey)
-                })
+                });
+            })
+
+            esocket.connect(friendKey)
         })
 
         this.remoteSwarm = swarm

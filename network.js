@@ -1,3 +1,4 @@
+const EventEmitter = require('events').EventEmitter
 const sodium = require('sodium-native')
 const enc = require('sodium-encryption')
 const SimplePeer = require('simple-peer')
@@ -29,123 +30,160 @@ function unseal(cipher, publicKey, secretKey) {
     return msg
 }
 
-/** Auth connection to host */
-async function authHost(socket, publicKey, secretKey, hostKey) {
-    const publicAuthKey = pub2auth(publicKey)
-    const secretAuthKey = secret2auth(secretKey)
-    const hostAuthKey = pub2auth(hostKey)
-    const sharedKey = enc.scalarMultiplication(secretAuthKey, hostAuthKey);
+/**
+ * Socket wrapper to use encrypted keypair communication
+ */
+class EncryptedSocket extends EventEmitter {
+    constructor(socket, publicKey, secretKey) {
+        super()
 
-    let success, fail
-    
-    /** 1. Send auth request with encrypted identity */
-    function sendAuthRequest() {
-        const box = seal(publicKey, hostAuthKey)
-        socket.write(box)
+        this.socket = socket
+        this.publicKey = publicKey
+        this.secretKey = secretKey
+
+        this.publicAuthKey = pub2auth(publicKey)
+        this.secretAuthKey = secret2auth(secretKey)
+
+        this._onReceive = this._onReceive.bind(this)
     }
 
-    /** 2. Receive challenge to decrypt, send back decrypted */
-    function receiveChallenge(data) {
-        const nonce = data.slice(0, sodium.crypto_box_NONCEBYTES)
-        const box = data.slice(sodium.crypto_box_NONCEBYTES, data.length)
-
-        const challenge = enc.decrypt(box, nonce, sharedKey)
-
-        const respNonce = enc.nonce()
-        const respBox = enc.encrypt(challenge, respNonce, sharedKey)
-    
-        const msg = new Buffer(respNonce.length + respBox.length)
-        respNonce.copy(msg)
-        respBox.copy(msg, nonce.length)
-        
-        socket.write(msg)
-        socket.once('data', receiveAuthSuccess)
-    }
-
-    /** 3. Receive auth success */
-    function receiveAuthSuccess(data) {
-        if (data.equals(SUCCESS)) {
-            success()
+    /**
+     * Connect to peer
+     * @param {*} peerKey 
+     * @param {*} initiator Whether this connection is initiating
+     */
+    connect(peerKey) {
+        if (peerKey) {
+            this._authHost(peerKey)
+        } else {
+            this._authPeer()
         }
     }
 
-    return new Promise((resolve, reject) => {
-        success = resolve
-        fail = reject
+    _setupEncryptionKey(peerKey) {
+        if (!this.sharedKey) {
+            this.peerAuthKey = pub2auth(peerKey)
+            this.sharedKey = enc.scalarMultiplication(this.secretAuthKey, this.peerAuthKey)
+            this.socket.on('data', this._onReceive)
+        }
+    }
+    
+    /** Auth connection to host */
+    _authHost(hostKey) {
+        const self = this
+        
+        /** 1. Send auth request with encrypted identity */
+        function sendAuthRequest() {
+            const box = seal(self.publicKey, self.peerAuthKey)
 
-        socket.once('data', receiveChallenge)
+            // Send without shared key encryption until peer can derive it
+            self.socket.write(box)
+
+            self.once('data', receiveChallenge)
+        }
+
+        /** 2. Receive challenge to decrypt, send back decrypted */
+        function receiveChallenge(challenge) {
+            self.write(challenge)
+            self.once('data', receiveAuthSuccess)
+        }
+
+        /** 3. Receive auth success */
+        function receiveAuthSuccess(data) {
+            if (data.equals(SUCCESS)) {
+                self.emit('connection')
+            }
+        }
+
+        this._setupEncryptionKey(hostKey)
         sendAuthRequest()
-    })
-}
-
-/** Auth connection to peer */
-async function authPeer(socket, publicKey, secretKey) {
-    const publicAuthKey = pub2auth(publicKey)
-    const secretAuthKey = secret2auth(secretKey)
-
-    let success, fail
-    
-    let peerPublicKey
-    let sharedKey
-    let challenge
-    
-    /** 1. Learn peer identity */
-    function receiveAuthRequest(data) {
-        const buf = Buffer.from(data)
-        peerPublicKey = unseal(buf, publicAuthKey, secretAuthKey)
-        
-        if (!peerPublicKey) {
-            console.error('Failed to unseal peer box')
-            return
-        }
-        
-        if (publicKey.equals(peerPublicKey)) {
-            // console.error('Auth request key is the same as the host')
-            // return
-        }
-
-        const peerAuthKey = pub2auth(peerPublicKey)
-        sharedKey = enc.scalarMultiplication(secretAuthKey, peerAuthKey);
-        
-        sendChallenge(peerPublicKey)
     }
 
-    /** 2. Respond with challenge to decrypt */
-    function sendChallenge(peerKey) {
-        challenge = enc.nonce()
+    /** Auth connection to peer */
+    _authPeer(socket, publicKey, secretKey) {
+        const self = this
+
+        let challenge
+
+        /** 1. Learn peer identity */
+        function receiveAuthRequest(data) {
+            const buf = Buffer.from(data)
+            const peerPublicKey = unseal(buf, self.publicAuthKey, self.secretAuthKey)
             
+            if (!peerPublicKey) {
+                self._error('Failed to unseal peer box')
+                return
+            }
+            
+            if (self.publicKey.equals(peerPublicKey)) {
+                // console.error('Auth request key is the same as the host')
+                // return
+            }
+    
+            self._setupEncryptionKey(peerPublicKey)        
+            sendChallenge()
+        }
+    
+        /** 2. Respond with challenge to decrypt */
+        function sendChallenge() {
+            challenge = enc.nonce()
+            self.write(challenge)
+            self.once('data', receiveChallengeVerification)
+        }
+    
+        /** 3. Verify decrypted challenge */
+        function receiveChallengeVerification(decryptedChallenge) {
+            if (challenge.equals(decryptedChallenge)) {
+                self.write(SUCCESS)
+                self.emit('connection')
+            } else {
+                self._error('Failed to authenticate peer')
+            }
+        }
+
+        this.socket.once('data', receiveAuthRequest)
+    }
+
+    write(data) {
+        if (!this.sharedKey) {
+            throw new Error(`EncryptedSocket failed to write. Missing 'sharedKey'`)
+        }
+        
         const nonce = enc.nonce()
-        const box = enc.encrypt(challenge, nonce, sharedKey)
+        const box = enc.encrypt(data, nonce, this.sharedKey)
     
         const msg = new Buffer(nonce.length + box.length)
         nonce.copy(msg)
         box.copy(msg, nonce.length)
-        
-        socket.write(msg)
-        socket.once('data', receiveChallengeVerification)
+
+        this.socket.write(msg)
     }
 
-    /** 3. Verify decrypted challenge */
-    function receiveChallengeVerification(data) {
+    _onReceive(data) {
+        if (!this.sharedKey) {
+            throw new Error(`EncryptedSocket failed to receive. Missing 'sharedKey'`)
+        }
+
+        // TODO: handle multiple data chunks
+
         const nonce = data.slice(0, sodium.crypto_box_NONCEBYTES)
         const box = data.slice(sodium.crypto_box_NONCEBYTES, data.length)
 
-        const decryptedChallenge = enc.decrypt(box, nonce, sharedKey)
+        const msg = enc.decrypt(box, nonce, this.sharedKey)
+        this.emit('data', msg)
+    }
 
-        if (challenge.equals(decryptedChallenge)) {
-            socket.write(SUCCESS)
-            success(peerPublicKey)
-        } else {
-            fail()
+    destroy() {
+        if (this.socket) {
+            this.socket.destroy()
+            this.socket = null
         }
     }
 
-    return new Promise((resolve, reject) => {
-        success = resolve
-        fail = reject
-
-        socket.once('data', receiveAuthRequest)
-    })
+    _error(err) {
+        this.destroy()
+        this.emit('error', err)
+    }
 }
 
 const CHUNK_DELIMITER = ';'
@@ -221,8 +259,7 @@ async function signalPeer(socket) {
 }
 
 module.exports = {
-    authHost,
-    authPeer,
+    EncryptedSocket,
     signalHost,
     signalPeer
 }
