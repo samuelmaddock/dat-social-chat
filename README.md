@@ -11,7 +11,7 @@ A small prototype P2P chat application built using [Electron](https://electronjs
 - [ ] Add [_dat.json_](https://github.com/datprotocol/dat.json) file to archive
 - [ ] Move hyperdrive into Electron's main process
 - [ ] Possibly replace `DatSocialArchive` class with [WebDB](https://github.com/beakerbrowser/webdb)
-- [ ] Encrypt WebRTC signaling communication
+- [x] Encrypt WebRTC signaling communication
 - [ ] Support multiple chat DM threads
 - [ ] Detect online/offline status of friends
 - [ ] Don't reuse Dat key pair for authentication ([see notes](https://download.libsodium.org/doc/advanced/ed25519-curve25519.html))
