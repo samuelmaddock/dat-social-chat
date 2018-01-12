@@ -8,7 +8,7 @@ const discoverySwarm = require('discovery-swarm')
 const sodium = require('sodium-universal')
 const ram = require('random-access-memory')
 
-const { EncryptedSocket, signalPeer } = require('./network');
+const { EncryptedSocket, signalPeer } = require('./lib/network');
 
 const FRIENDSWARM = new Buffer('swarm2')
 const DEFAULT_PORT = 3283
