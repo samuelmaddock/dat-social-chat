@@ -8,8 +8,7 @@ const discoverySwarm = require('discovery-swarm')
 const sodium = require('sodium-universal')
 const ram = require('random-access-memory')
 
-const network = require('./network');
-const { EncryptedSocket } = network;
+const { EncryptedSocket, signalPeer } = require('./network');
 
 const FRIENDSWARM = new Buffer('swarm2')
 const DEFAULT_PORT = 3283
@@ -129,7 +128,7 @@ class App {
 
             esocket.once('connection', () => {
                 console.log(`AUTHED WITH PEER! ${socket.address().address}`)
-                network.signalPeer(esocket).then(peer => {
+                signalPeer(esocket).then(peer => {
                     console.log('PEER PEER', peer)
                     esocket.destroy()
                     this.setupChat(peer, esocket.peerKey)
@@ -303,12 +302,12 @@ class App {
 
             esocket.once('connection', () => {
                 console.log(`AUTHED WITH HOST! ${socket.address().address}`)
-                network.signalHost(esocket).then(peer => {
+                signalPeer(esocket, {initiator: true}).then(peer => {
                     console.info('HOST PEER', peer)
                     esocket.destroy()
                     swarm.close()
                     this.setupChat(peer, friendKey)
-                });
+                })
             })
 
             esocket.connect(friendKey)

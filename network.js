@@ -219,49 +219,14 @@ function readJSON(data, cb) {
     }
 }
 
-/** Initiate WebRTC signaling with host */
-async function signalHost(socket) {
-    console.debug('SIGNALHOST')
+function signalPeer(socket, opts) {
     return new Promise((resolve, reject) => {
-        const peer = SimplePeer({initiator: true})
+        const peer = SimplePeer(opts)
         peer.once('error', reject)
-
-        peer.on('signal', offer => {
-            console.debug('P1 signal')
-            writeJSON(socket, offer)
-        })
-
-        peer.once('connect', () => {
-            console.debug('P1 connect')
-            resolve(peer)
-        })
+        peer.once('connect', () => resolve(peer))
+        peer.on('signal', answer => writeJSON(socket, answer))
 
         socket.on('data', data => {
-            console.debug('P1 answer')
-            readJSON(data, answer => peer.signal(answer))
-        })
-    })
-}
-
-/** Await and complete WebRTC signaling with peer */
-async function signalPeer(socket) {
-    console.debug('SIGNALPEER')
-    return new Promise((resolve, reject) => {
-        const peer = SimplePeer()
-        peer.once('error', reject)
-
-        peer.on('signal', answer => {
-            console.debug('P2 signal')
-            writeJSON(socket, answer)
-        })
-
-        peer.once('connect', () => {
-            console.debug('P2 connect')
-            resolve(peer)
-        })
-
-        socket.on('data', data => {
-            console.debug('P2 offer')
             readJSON(data, offer => peer.signal(offer))
         })
     })
@@ -269,6 +234,5 @@ async function signalPeer(socket) {
 
 module.exports = {
     EncryptedSocket,
-    signalHost,
     signalPeer
 }
