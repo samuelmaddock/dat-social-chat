@@ -130,10 +130,9 @@ class App {
             esocket.once('connection', () => {
                 console.log(`AUTHED WITH PEER! ${socket.address().address}`)
                 network.signalPeer(esocket).then(peer => {
-                    const peerKey = esocket.peerKey
                     console.log('PEER PEER', peer)
                     esocket.destroy()
-                    this.setupChat(peer, peerKey)
+                    this.setupChat(peer, esocket.peerKey)
                 });
             })
 

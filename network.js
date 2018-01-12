@@ -1,6 +1,7 @@
 const EventEmitter = require('events').EventEmitter
 const sodium = require('sodium-native')
 const enc = require('sodium-encryption')
+const lpstream = require('length-prefixed-stream')
 const SimplePeer = require('simple-peer')
 
 const SUCCESS = new Buffer('chat-auth-success')
@@ -49,7 +50,7 @@ class EncryptedSocket extends EventEmitter {
 
     /**
      * Connect to peer
-     * @param {*} peerKey 
+     * @param {*} peerKey
      * @param {*} initiator Whether this connection is initiating
      */
     connect(peerKey) {
@@ -60,18 +61,29 @@ class EncryptedSocket extends EventEmitter {
         }
     }
 
+    _setupSocket() {
+        this._encode = lpstream.encode()
+        this._decode = lpstream.decode()
+
+        this._decode.on('data', this._onReceive)
+
+        this._encode.pipe(this.socket)
+        this.socket.pipe(this._decode)
+    }
+
     _setupEncryptionKey(peerKey) {
         if (!this.sharedKey) {
+            this.peerKey = peerKey
             this.peerAuthKey = pub2auth(peerKey)
             this.sharedKey = enc.scalarMultiplication(this.secretAuthKey, this.peerAuthKey)
-            this.socket.on('data', this._onReceive)
+            this._setupSocket()
         }
     }
-    
+
     /** Auth connection to host */
     _authHost(hostKey) {
         const self = this
-        
+
         /** 1. Send auth request with encrypted identity */
         function sendAuthRequest() {
             const box = seal(self.publicKey, self.peerAuthKey)
@@ -109,28 +121,28 @@ class EncryptedSocket extends EventEmitter {
         function receiveAuthRequest(data) {
             const buf = Buffer.from(data)
             const peerPublicKey = unseal(buf, self.publicAuthKey, self.secretAuthKey)
-            
+
             if (!peerPublicKey) {
                 self._error('Failed to unseal peer box')
                 return
             }
-            
+
             if (self.publicKey.equals(peerPublicKey)) {
                 // console.error('Auth request key is the same as the host')
                 // return
             }
-    
-            self._setupEncryptionKey(peerPublicKey)        
+
+            self._setupEncryptionKey(peerPublicKey)
             sendChallenge()
         }
-    
+
         /** 2. Respond with challenge to decrypt */
         function sendChallenge() {
             challenge = enc.nonce()
             self.write(challenge)
             self.once('data', receiveChallengeVerification)
         }
-    
+
         /** 3. Verify decrypted challenge */
         function receiveChallengeVerification(decryptedChallenge) {
             if (challenge.equals(decryptedChallenge)) {
@@ -148,15 +160,16 @@ class EncryptedSocket extends EventEmitter {
         if (!this.sharedKey) {
             throw new Error(`EncryptedSocket failed to write. Missing 'sharedKey'`)
         }
-        
+
         const nonce = enc.nonce()
         const box = enc.encrypt(data, nonce, this.sharedKey)
-    
+
         const msg = new Buffer(nonce.length + box.length)
         nonce.copy(msg)
         box.copy(msg, nonce.length)
 
-        this.socket.write(msg)
+        this._encode.write(msg)
+        console.debug(`Write ${msg.length} to ${this.peerKey.toString('hex')}`)
     }
 
     _onReceive(data) {
@@ -164,12 +177,17 @@ class EncryptedSocket extends EventEmitter {
             throw new Error(`EncryptedSocket failed to receive. Missing 'sharedKey'`)
         }
 
-        // TODO: handle multiple data chunks
+        console.debug(`Received ${data.length} from ${this.peerKey.toString('hex')}`)
 
         const nonce = data.slice(0, sodium.crypto_box_NONCEBYTES)
         const box = data.slice(sodium.crypto_box_NONCEBYTES, data.length)
 
         const msg = enc.decrypt(box, nonce, this.sharedKey)
+
+        if (!msg) {
+            throw new Error('EncryptedSocket failed to decrypt received data.')
+        }
+
         this.emit('data', msg)
     }
 
@@ -186,28 +204,19 @@ class EncryptedSocket extends EventEmitter {
     }
 }
 
-const CHUNK_DELIMITER = ';'
-
-function writeJSONChunk(stream, object) {
-    const buf = new Buffer(JSON.stringify(object) + CHUNK_DELIMITER)
+function writeJSON(stream, object) {
+    const buf = new Buffer(JSON.stringify(object))
     stream.write(buf)
 }
 
-function readJSONChunk(data, cb) {
-    let chunk = data.toString();
-    let d_index = chunk.indexOf(CHUNK_DELIMITER);
-   
-    while (d_index > -1) {         
-        try {
-            string = chunk.substring(0,d_index);
-            json = JSON.parse(string);
-            cb(json);
-        } catch (e) {
-            throw e;
-        }
-        chunk = chunk.substring(d_index+1);
-        d_index = chunk.indexOf(';');
-    }  
+function readJSON(data, cb) {
+    let string = data.toString()
+    try {
+        const json = JSON.parse(string)
+        cb(json);
+    } catch (e) {
+        throw e;
+    }
 }
 
 /** Initiate WebRTC signaling with host */
@@ -219,7 +228,7 @@ async function signalHost(socket) {
 
         peer.on('signal', offer => {
             console.debug('P1 signal')
-            writeJSONChunk(socket, offer)
+            writeJSON(socket, offer)
         })
 
         peer.once('connect', () => {
@@ -229,7 +238,7 @@ async function signalHost(socket) {
 
         socket.on('data', data => {
             console.debug('P1 answer')
-            readJSONChunk(data, answer => peer.signal(answer))
+            readJSON(data, answer => peer.signal(answer))
         })
     })
 }
@@ -240,20 +249,20 @@ async function signalPeer(socket) {
     return new Promise((resolve, reject) => {
         const peer = SimplePeer()
         peer.once('error', reject)
-        
+
         peer.on('signal', answer => {
             console.debug('P2 signal')
-            writeJSONChunk(socket, answer)
+            writeJSON(socket, answer)
         })
 
         peer.once('connect', () => {
             console.debug('P2 connect')
             resolve(peer)
         })
-        
+
         socket.on('data', data => {
             console.debug('P2 offer')
-            readJSONChunk(data, offer => peer.signal(offer))
+            readJSON(data, offer => peer.signal(offer))
         })
     })
 }

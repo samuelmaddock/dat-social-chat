@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "dat-node": "^3.5.5",
+    "length-prefixed-stream": "^1.5.1",
     "simple-peer": "^8.1.1",
     "sodium-encryption": "^1.2.3"
   }
