@@ -3,31 +3,14 @@ const path = require('path')
 const EventEmitter = require('events')
 
 const Dat = require('dat-node')
-const swarmDefaults = require('dat-swarm-defaults')
-const discoverySwarm = require('discovery-swarm')
-const sodium = require('sodium-universal')
 const ram = require('random-access-memory')
 
-const { EncryptedSocket, signalPeer } = require('./lib/network');
-
-const FRIENDSWARM = new Buffer('swarm2')
-const DEFAULT_PORT = 3283
-
-const SWARM_OPTS = {
-    hash: false
-}
+const swarm = require('./lib/swarm')
 
 const DEFAULT_NAME = 'Foobar'
 
 function key2str(key) {
     return typeof key === 'string' ? key : key.toString('hex')
-}
-
-function friendDiscoveryKey(tree) {
-    var digest = new Buffer(32)
-    sodium.crypto_generichash(digest, FRIENDSWARM, tree)
-    console.debug(`FRIENDDISC digest=${digest.toString('hex')}, tree=${tree.toString('hex')}`)
-    return digest
 }
 
 class App {
@@ -97,48 +80,6 @@ class App {
         this.initLocalSwarm()
 
         this.friends.forEach(friendId => friendLoader.loadFriendArchive(friendId));
-    }
-
-    initLocalSwarm() {
-        if (this.localSwarm) {
-            this.localSwarm.close()
-            this.localSwarm = null
-        }
-        
-        const id = friendDiscoveryKey(this.archive.dat.key)
-        console.info(`Starting local swarm ${id.toString('hex')}`);
-
-        const swarm = discoverySwarm(swarmDefaults(SWARM_OPTS))
-        swarm.listen(DEFAULT_PORT)
-        swarm.join(id, { announce: true })
-
-        swarm.on('error', function(){
-            console.log('Local swarm error', arguments)
-            swarm.listen(0)
-        })
-        
-        swarm.on('connection', socket => {
-            console.log('Local swarm connection', socket)
-
-            const dat = this.archive.dat
-            const publicKey = dat.archive.key
-            const secretKey = dat.archive.metadata.secretKey
-            
-            const esocket = new EncryptedSocket(socket, publicKey, secretKey)
-
-            esocket.once('connection', () => {
-                console.log(`AUTHED WITH PEER! ${socket.address().address}`)
-                signalPeer(esocket).then(peer => {
-                    console.log('PEER PEER', peer)
-                    esocket.destroy()
-                    this.setupChat(peer, esocket.peerKey)
-                });
-            })
-
-            esocket.connect()
-        })
-
-        this.localSwarm = swarm
     }
 
     setupChat(peer, peerKey) {
@@ -268,52 +209,45 @@ class App {
     }
 
     onConnectToFriend(friendId) {
-        this.connectRemoteSwarm(friendId)
+        const friendKey = Buffer.from(friendId, 'hex')
+        this.connectRemoteSwarm(friendKey)
     }
 
-    connectRemoteSwarm(friendId) {
+    initLocalSwarm() {
+        if (this.localSwarm) {
+            this.localSwarm.close()
+            this.localSwarm = null
+        }
+
+        this.localSwarm = swarm.listen({
+            publicKey: this.archive.dat.archive.key,
+            secretKey: this.archive.dat.archive.metadata.secretKey
+        }, (peer, peerPublicKey) => {
+            this.setupChat(peer, peerPublicKey)
+        })
+    }
+
+    connectRemoteSwarm(hostKey) {
         if (this.remoteSwarm) {
             this.remoteSwarm.close()
             this.remoteSwarm = null
         }
-
-        const friendKey = Buffer.from(friendId, 'hex')
-        const id = friendDiscoveryKey(friendKey)
         
-        console.info(`Connecting to remote swarm ${id.toString('hex')}...`)
-        
-        const swarm = discoverySwarm(swarmDefaults(SWARM_OPTS))
-        swarm.listen(DEFAULT_PORT+1)
-        swarm.join(id)
+        this.remoteSwarm = swarm.connect({
+            hostPublicKey: hostKey,
+            publicKey: this.archive.dat.archive.key,
+            secretKey: this.archive.dat.archive.metadata.secretKey
+        }, (err, peer) => {
+            this.remoteSwarm = null
 
-        swarm.on('error', function(){
-            console.log('Remote swarm error', arguments)
-            swarm.listen(0)
-        })
-        
-        swarm.on('connection', socket => {
-            console.log('Remote swarm connection', socket)
-
-            const dat = this.archive.dat
-            const publicKey = dat.archive.key
-            const secretKey = dat.archive.metadata.secretKey
+            if (err) {
+                console.error('Failed to connect to remote swarm')
+                return
+            }
             
-            const esocket = new EncryptedSocket(socket, publicKey, secretKey)
-
-            esocket.once('connection', () => {
-                console.log(`AUTHED WITH HOST! ${socket.address().address}`)
-                signalPeer(esocket, {initiator: true}).then(peer => {
-                    console.info('HOST PEER', peer)
-                    esocket.destroy()
-                    swarm.close()
-                    this.setupChat(peer, friendKey)
-                })
-            })
-
-            esocket.connect(friendKey)
+            console.log('Connected to remote swarm peer')
+            this.setupChat(peer, hostKey)
         })
-
-        this.remoteSwarm = swarm
     }
 }
 
