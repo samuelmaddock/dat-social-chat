@@ -318,7 +318,7 @@ dat-link-resolve@^2.0.0:
     debug "^2.6.6"
     nets "^3.2.0"
 
-dat-node@3.5.6:
+dat-node@^3.5.6:
   version "3.5.6"
   resolved "https://registry.yarnpkg.com/dat-node/-/dat-node-3.5.6.tgz#ff33e926002c5d9a8f56c3892d2b431cf3c16398"
   dependencies:
