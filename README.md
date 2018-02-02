@@ -6,12 +6,12 @@ A small prototype P2P chat application built using [Electron](https://electronjs
 
 ## Todo
 
+- [x] Encrypt WebRTC signaling communication
+- [x] Figure out whether UDP hole punching is needed for [discovery-swarm](https://github.com/mafintosh/discovery-swarm/issues/16)'s DHT connections
 - [ ] Fix profile name resolution in chat
-- [ ] Figure out whether UDP hole punching is needed for [discovery-swarm](https://github.com/mafintosh/discovery-swarm)'s DHT connections
 - [ ] Add [_dat.json_](https://github.com/datprotocol/dat.json) file to archive
 - [ ] Move hyperdrive into Electron's main process
 - [ ] Possibly replace `DatSocialArchive` class with [WebDB](https://github.com/beakerbrowser/webdb)
-- [x] Encrypt WebRTC signaling communication
 - [ ] Support multiple chat DM threads
 - [ ] Detect online/offline status of friends
 - [ ] Don't reuse Dat key pair for authentication ([see notes](https://download.libsodium.org/doc/advanced/ed25519-curve25519.html))
