@@ -70,17 +70,18 @@ class App {
 
         this.profile = await this.archive.getOrCreateProfile()
         this.friends = await this.archive.getFriends()
-
+        
         this.archive.dat.network.on('connection', function() {
             console.info('archive connection', arguments);
         });
-
+        
         this.archive.dat.network.on('peer', peer => {
             console.info('archive peer', peer);
         });
-
+        
         this.initLocalSwarm()
-
+        
+        friendLoader.loadFriendArchive(this.localKey).catch(noop)
         this.friends.forEach(friendId => friendLoader.loadFriendArchive(friendId).catch(noop));
     }
 
