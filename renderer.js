@@ -480,6 +480,7 @@ class FriendLoader extends EventEmitter {
         const archive = await DatSocialArchive.get(ram, { key: friendId })
         const profile = await archive.getProfile()
         this.cache.set(key2str(friendId), profile)
+        archive.dat.close()
         this.emit('update')
     }
 }
