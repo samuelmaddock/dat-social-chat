@@ -7,6 +7,8 @@ const ram = require('random-access-memory')
 
 const swarm = require('./lib/swarm')
 
+const noop = () => {}
+
 const DEFAULT_NAME = 'Foobar'
 
 function key2str(key) {
@@ -17,7 +19,7 @@ class App {
     get localKey() {
         return this.archive ? this.archive.dat.key : null;
     }
-    
+
     async init() {
         const $ = document.querySelector.bind(document)
 
@@ -40,7 +42,7 @@ class App {
             chatSendBtn: $('.chat-send-btn'),
             chatDisconnectBtn: $('.chat-disconnect-btn'),
         }
-        
+
         this.$.profileCreateBtn.addEventListener('click', this.onSaveProfile.bind(this), false)
         this.$.profileSaveBtn.addEventListener('click', this.onSaveProfile.bind(this), false)
 
@@ -51,7 +53,7 @@ class App {
         this.$.chatDisconnectBtn.addEventListener('click', this.onDisconnectChat.bind(this), false)
 
         this.updateUI = this.updateUI.bind(this)
-        
+
         await this.initDat()
         this.updateUI()
         friendLoader.on('update', this.updateUI)
@@ -68,18 +70,18 @@ class App {
 
         this.profile = await this.archive.getOrCreateProfile()
         this.friends = await this.archive.getFriends()
-        
+
         this.archive.dat.network.on('connection', function() {
             console.info('archive connection', arguments);
         });
-        
+
         this.archive.dat.network.on('peer', peer => {
             console.info('archive peer', peer);
         });
-        
+
         this.initLocalSwarm()
 
-        this.friends.forEach(friendId => friendLoader.loadFriendArchive(friendId));
+        this.friends.forEach(friendId => friendLoader.loadFriendArchive(friendId).catch(noop));
     }
 
     setupChat(peer, peerKey) {
@@ -90,13 +92,13 @@ class App {
             this.chat = undefined
             this.updateUI()
         })
-        
+
         this.updateUI()
     }
-    
+
     updateUI() {
         const { archive, profile } = this;
-        
+
         // Profile
         this.$.profileForm.id.value = archive ? archive.id : ''
         this.$.profileForm.name.value = profile ? profile.name : this.$.profileForm.name.value || DEFAULT_NAME
@@ -104,23 +106,23 @@ class App {
         this.$.profileSaveBtn.disabled = !archive
 
         this.$.profileFieldset.disabled = false
-        
+
         // Friends
         this.$.friendsFieldset.disabled = false
-        
+
         if (this.friends.size > 0) {
             this.$.friendsList.innerHTML = ''
             this.friends.forEach(friendId => {
                 const el = document.createElement('li')
                 el.innerText = friendLoader.resolveName(friendId) + ' '
-                
+
                 const connect = document.createElement('a')
                 connect.innerText = 'Connect'
                 connect.href = 'javascript:void(0)'
                 connect.onclick = this.onConnectToFriend.bind(this, friendId)
 
                 el.appendChild(connect)
-                
+
                 this.$.friendsList.appendChild(el)
             });
         } else {
@@ -132,7 +134,7 @@ class App {
 
         if (this.chat) {
             this.$.chatTitle.innerText = `Chat: ${friendLoader.resolveName(this.chat.peerId)}`
-            
+
             this.$.chatMessages.innerHTML = ''
             this.chat.messages.forEach(message => {
                 const el = document.createElement('li')
@@ -146,13 +148,23 @@ class App {
     }
 
     async onSaveProfile() {
+        this.$.profileFieldset.disabled = true;
+
         const form = this.$.profileForm
         const profile = {
             name: form.name.value
         }
 
-        this.$.profileFieldset.disabled = true;
-        this.archive.updateProfile(profile)
+        try {
+            await this.archive.updateProfile(profile)
+            await friendLoader.loadFriendArchive(this.localKey)
+        } catch (e) {
+            console.log('ERR', e);
+        }
+
+        this.profile = profile
+        this.updateUI()
+
         this.$.profileFieldset.disabled = false;
     }
 
@@ -161,20 +173,20 @@ class App {
             alert('Invalid friend ID')
             return
         }
-        
+
         const friendId = this.$.friendsForm.friendid.value
         console.log('Add friend', friendId)
-        
+
         if (this.friends.has(friendId)) {
             console.warn('Friend ID already added')
             return
         }
 
         this.$.friendsFieldset.disabled = true;
-        
+
         this.friends.add(friendId)
         this.archive.setFriends(this.friends)
-        
+
         // cleanup
         this.$.friendsForm.friendid.value = ''
         this.$.friendsFieldset.disabled = false;
@@ -190,7 +202,7 @@ class App {
             this.onSendChat()
         }
     }
-    
+
     onSendChat() {
         if (!this.$.chatForm.checkValidity()) {
             return
@@ -232,7 +244,7 @@ class App {
             this.remoteSwarm.close()
             this.remoteSwarm = null
         }
-        
+
         this.remoteSwarm = swarm.connect({
             hostPublicKey: hostKey,
             publicKey: this.archive.dat.archive.key,
@@ -244,7 +256,7 @@ class App {
                 console.error('Failed to connect to remote swarm')
                 return
             }
-            
+
             console.log('Connected to remote swarm peer')
             this.setupChat(peer, hostKey)
         })
@@ -296,7 +308,7 @@ class ChatRoom extends EventEmitter {
         }
 
         let action
-        
+
         try {
            action = buf.slice(ChatRoom.header.length, buf.length)
            action = JSON.parse(action)
@@ -308,7 +320,7 @@ class ChatRoom extends EventEmitter {
 
         this.dispatch(action)
     }
-    
+
     close() {
         if (this.peer) {
             this.peer.destroy()
@@ -341,23 +353,23 @@ class DatSocialArchive {
         return this.dat.key.toString('hex');
     }
 
-    get profilePath() {
-        return path.join(this.dat.path, 'profile.json')
-    }
-    
-    get friendsPath() {
-        return path.join(this.dat.path, 'friends.json')
-    }
-    
     getProfile() {
         return new Promise((resolve, reject) => {
             this.dat.archive.readFile('profile.json', (err, buf) => {
                 if (err) {
-                    reject()
-                } else {
-                    const json = JSON.parse(buf.toString('utf-8'))
-                    resolve(json)
+                    reject(err)
+                    return
                 }
+
+                let json
+
+                try {
+                    json = JSON.parse(buf.toString('utf-8'))
+                } catch (e) {
+                    reject(e)
+                }
+
+                resolve(json)
             })
         });
     }
@@ -372,9 +384,18 @@ class DatSocialArchive {
         }
     }
 
-    updateProfile(profile) {
+    async updateProfile(profile) {
         const profileJson = JSON.stringify(profile, null, '  ')
-        fs.writeFileSync(this.profilePath, profileJson)
+
+        return new Promise((resolve, reject) => {
+            this.dat.archive.writeFile('profile.json', profileJson, (err) => {
+                if (err) {
+                    reject(err)
+                } else {
+                    resolve()
+                }
+            })
+        })
     }
 
     getFriends() {
@@ -393,17 +414,22 @@ class DatSocialArchive {
 
     setFriends(friendSet) {
         const array = JSON.stringify(Array.from(friendSet))
-        fs.writeFileSync(this.friendsPath, array)
+        this.dat.archive.writeFile('friends.json', array)
     }
-    
+
     static get(dirOrStorage, opts = {}) {
         return new Promise((resolve, reject) => {
-            Dat(dirOrStorage, opts, (err, dat) => {
+            const options = Object.assign({}, opts, {
+                // https://github.com/datproject/dat-node/issues/163
+                indexing: false
+            })
+
+            Dat(dirOrStorage, options, (err, dat) => {
                 if (err) {
                     reject(err)
                     return
                 }
-                
+
                 dat.joinNetwork(err => {
                     reject(err)
 
@@ -422,7 +448,7 @@ class DatSocialArchive {
 
     static async getLocal() {
         const dirpath = './dat';
-        
+
         if (!fs.existsSync(dirpath)) {
             fs.mkdir(dirpath)
         }
@@ -430,11 +456,8 @@ class DatSocialArchive {
         const archive = await DatSocialArchive.get(dirpath)
         const dat = archive.dat
 
-        const progress = dat.importFiles({watch: true})
-        progress.on('put', function (src, dest) {
-            console.log('Importing ', src.name, ' into archive')
-        })
-        
+        dat.importFiles()
+
         console.info(`My dat link is: dat://${key2str(dat.key)}`)
 
         return archive
@@ -446,7 +469,7 @@ class FriendLoader extends EventEmitter {
         super()
         this.cache = new Map()
     }
-    
+
     resolveName(friendId) {
         const key = key2str(friendId)
         const shortKey = key.substr(0,7)
