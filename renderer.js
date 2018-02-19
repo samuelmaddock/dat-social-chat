@@ -244,6 +244,7 @@ class App {
         this.localSwarm = swarm.listen(swarmOpts, async (socket, peerPublicKey) => {
             console.log('Local connection with peer', peerPublicKey.toString('hex'));
             const peer = await signalPeer(socket)
+            socket.destroy()
             this.setupChat(peer, peerPublicKey)
         })
     }
@@ -257,10 +258,10 @@ class App {
         })
 
         const { socket } = await swarm.connect(swarmOpts)
+        console.log('Remote connection with peer', hostKey.toString('hex'))
 
-        console.log('Connected to remote swarm peer')
         const peer = await signalPeer(socket, { initiator: true })
-        console.log('Established webrtc')
+        socket.destroy()
 
         this.setupChat(peer, hostKey)
     }
