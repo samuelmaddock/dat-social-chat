@@ -5,7 +5,10 @@ const EventEmitter = require('events')
 const Dat = require('dat-node')
 const ram = require('random-access-memory')
 
-const swarm = require('./lib/swarm')
+const swarmDefaults = require('dat-swarm-defaults')
+const swarm = require('swarm-peer-server')
+
+const { signalPeer } = require('./lib/network')
 
 const noop = () => {}
 
@@ -70,17 +73,17 @@ class App {
 
         this.profile = await this.archive.getOrCreateProfile()
         this.friends = await this.archive.getFriends()
-        
+
         this.archive.dat.network.on('connection', function() {
             console.info('archive connection', arguments);
         });
-        
+
         this.archive.dat.network.on('peer', peer => {
             console.info('archive peer', peer);
         });
-        
+
         this.initLocalSwarm()
-        
+
         friendLoader.loadFriendArchive(this.localKey).catch(noop)
         this.friends.forEach(friendId => friendLoader.loadFriendArchive(friendId).catch(noop));
     }
@@ -232,35 +235,34 @@ class App {
             this.localSwarm = null
         }
 
-        this.localSwarm = swarm.listen({
+        const swarmOpts = Object.assign({}, swarmDefaults({ hash: false }), {
             publicKey: this.archive.dat.archive.key,
-            secretKey: this.archive.dat.archive.metadata.secretKey
-        }, (peer, peerPublicKey) => {
+            secretKey: this.archive.dat.archive.metadata.secretKey,
+            convert: true
+        })
+
+        this.localSwarm = swarm.listen(swarmOpts, async (socket, peerPublicKey) => {
+            console.log('Local connection with peer', peerPublicKey.toString('hex'));
+            const peer = await signalPeer(socket)
             this.setupChat(peer, peerPublicKey)
         })
     }
 
-    connectRemoteSwarm(hostKey) {
-        if (this.remoteSwarm) {
-            this.remoteSwarm.close()
-            this.remoteSwarm = null
-        }
-
-        this.remoteSwarm = swarm.connect({
+    async connectRemoteSwarm(hostKey) {
+        const swarmOpts = Object.assign({}, swarmDefaults({ hash: false }), {
             hostPublicKey: hostKey,
             publicKey: this.archive.dat.archive.key,
-            secretKey: this.archive.dat.archive.metadata.secretKey
-        }, (err, peer) => {
-            this.remoteSwarm = null
-
-            if (err) {
-                console.error('Failed to connect to remote swarm')
-                return
-            }
-
-            console.log('Connected to remote swarm peer')
-            this.setupChat(peer, hostKey)
+            secretKey: this.archive.dat.archive.metadata.secretKey,
+            convert: true
         })
+
+        const { socket } = await swarm.connect(swarmOpts)
+
+        console.log('Connected to remote swarm peer')
+        const peer = await signalPeer(socket, { initiator: true })
+        console.log('Established webrtc')
+
+        this.setupChat(peer, hostKey)
     }
 }
 
